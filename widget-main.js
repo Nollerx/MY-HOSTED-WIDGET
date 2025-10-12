@@ -168,6 +168,10 @@ function renderWidget() {
                             <span>✨</span>
                             Try On
                         </button>
+                        <button class="btn btn-secondary" onclick="openPanel()" style="margin-top: 8px;">
+                            <span>🔍</span>
+                            Test Open Panel
+                        </button>
                     </div>
                     
                     <div id="resultSection" style="display: none;">
