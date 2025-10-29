@@ -468,17 +468,31 @@ async function loadClothingFromShopify(storeConfig) {
     }
 
     // Fetch all products with pagination
+    // NOTE: Shopify products.json pagination can be limited:
+    // - Some stores return all products in one request (if < 250)
+    // - Some stores support cursor-based pagination with since_id parameter
+    // - If store has >250 products and doesn't support pagination, we'll get first 250
+    // For stores with >250 products, consider using Shopify Admin API or GraphQL API
+    console.log('🛍️ Fetching products... (Note: Pagination support varies by store)');
     let allProducts = [];
-    let page = 1;
+    let pageCount = 0;
     let hasMoreProducts = true;
+    let sinceId = null; // For cursor-based pagination
     const limit = 250; // Shopify max per page
-
+    
     console.log('🛍️ Starting paginated product fetch...');
 
     while (hasMoreProducts) {
         try {
-            const url = `${baseUrl}/products.json?limit=${limit}&page=${page}`;
-            console.log(`🛍️ Fetching page ${page}...`);
+            pageCount++;
+            let url = `${baseUrl}/products.json?limit=${limit}`;
+            
+            // Use since_id for cursor-based pagination if we have it
+            if (sinceId) {
+                url += `&since_id=${sinceId}`;
+            }
+            
+            console.log(`🛍️ Fetching page ${pageCount}${sinceId ? ` (since_id: ${sinceId})` : ''}...`);
             
             const response = await fetch(url, {
                 method: 'GET',
@@ -488,7 +502,7 @@ async function loadClothingFromShopify(storeConfig) {
             });
 
             if (!response.ok) {
-                console.log(`🛍️ Page ${page} failed with status:`, response.status);
+                console.log(`🛍️ Page ${pageCount} failed with status:`, response.status);
                 hasMoreProducts = false;
                 break;
             }
@@ -496,36 +510,92 @@ async function loadClothingFromShopify(storeConfig) {
             const data = await response.json();
             
             if (!data.products || !Array.isArray(data.products)) {
-                console.log(`🛍️ Page ${page} has invalid format`);
+                console.log(`🛍️ Page ${pageCount} has invalid format`);
                 hasMoreProducts = false;
                 break;
             }
 
             const pageProducts = data.products;
-            console.log(`✅ Page ${page} loaded: ${pageProducts.length} products`);
+            console.log(`✅ Page ${pageCount} loaded: ${pageProducts.length} products`);
+            
+            if (pageProducts.length === 0) {
+                // No products returned, we've reached the end
+                hasMoreProducts = false;
+                console.log('🛍️ Reached last page (no products returned)');
+                break;
+            }
             
             allProducts = allProducts.concat(pageProducts);
 
             // Check if we have more products
+            // If we got fewer than the limit, we're done
             if (pageProducts.length < limit) {
                 hasMoreProducts = false;
-                console.log('🛍️ Reached last page (fewer products than limit)');
+                console.log(`🛍️ Reached last page (got ${pageProducts.length} products, less than limit of ${limit})`);
             } else {
-                page++;
-                // Safety limit to prevent infinite loops
-                if (page > 100) {
-                    console.warn('🛍️ Reached page limit (100), stopping pagination');
+                // Get the last product's ID for cursor-based pagination
+                const lastProduct = pageProducts[pageProducts.length - 1];
+                if (lastProduct && lastProduct.id) {
+                    const newSinceId = lastProduct.id;
+                    
+                    // Check if since_id is actually working (we got new products)
+                    if (sinceId && newSinceId === sinceId) {
+                        // Since_id didn't change, pagination might not be supported
+                        console.log('🛍️ since_id unchanged, pagination may not be supported by this store');
+                        hasMoreProducts = false;
+                        break;
+                    }
+                    
+                    // Check for duplicates with previous page
+                    const previousPageStart = allProducts.length - pageProducts.length;
+                    const hasDuplicates = pageCount > 1 && 
+                        pageProducts.some(p => 
+                            allProducts.slice(0, previousPageStart).some(a => 
+                                a.id === p.id || (a.handle === p.handle && a.title === p.title)
+                            )
+                        );
+                    
+                    if (hasDuplicates) {
+                        console.log('🛍️ Detected duplicate products, stopping pagination');
+                        hasMoreProducts = false;
+                        break;
+                    }
+                    
+                    sinceId = newSinceId;
+                    console.log(`🛍️ More products available, next since_id: ${sinceId}`);
+                } else {
+                    // Product doesn't have ID, can't use cursor-based pagination
+                    console.log('🛍️ Products don\'t have IDs, pagination not supported by this store endpoint');
                     hasMoreProducts = false;
+                    break;
                 }
             }
 
         } catch (error) {
-            console.error(`🛍️ Error fetching page ${page}:`, error);
+            console.error(`🛍️ Error fetching page ${pageCount}:`, error);
             hasMoreProducts = false;
         }
     }
 
-    console.log(`✅ Shopify total products loaded: ${allProducts.length} (from ${page} page${page > 1 ? 's' : ''})`);
+    console.log(`✅ Shopify total products loaded: ${allProducts.length} (from ${pageCount} page${pageCount > 1 ? 's' : ''})`);
+    
+    // Remove any potential duplicates
+    const uniqueProducts = [];
+    const seenIds = new Set();
+    for (const product of allProducts) {
+        if (product.id && !seenIds.has(product.id)) {
+            seenIds.add(product.id);
+            uniqueProducts.push(product);
+        } else if (!product.id) {
+            // Products without IDs should still be included
+            uniqueProducts.push(product);
+        }
+    }
+    
+    if (uniqueProducts.length !== allProducts.length) {
+        console.log(`⚠️ Removed ${allProducts.length - uniqueProducts.length} duplicate products`);
+        allProducts = uniqueProducts;
+    }
     
     if (allProducts.length === 0) {
         throw new Error('No products found in Shopify store');
