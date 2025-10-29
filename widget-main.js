@@ -123,19 +123,25 @@ const CLOTHING_CATEGORIES = {
         /^(shoes?|boots?|sandals?|sneakers?|heels?|flats?|loafers?|oxfords?|pumps?|stilettos?|wedges?|clogs?|mules?|slides?|flip-flops?)$/i,
         /(running-shoes?|walking-shoes?|dress-shoes?|tennis-shoes?|basketball-shoes?|soccer-shoes?|hiking-boots?|work-boots?|combat-boots?)$/i,
         
-        // Accessories (only when clearly accessories)
-        /^(jewelry|jewellery|necklace|bracelet|earrings?|ring|rings|pendant|brooch|pin|pins)$/i,
-        /^(bags?|purse|purses|wallet|wallets|handbag|handbags|backpack|backpacks|tote|totes)$/i,
-        /^(hat|hats?|cap|caps?|beanie|beanies|fedora|fedoras|baseball-cap)$/i,
-        /^(sunglasses?|glasses?|eyewear|watch|watches?|timepiece)$/i,
+        // Accessories - more comprehensive patterns
+        /^(jewelry|jewellery|necklace|bracelet|bracelets?|earrings?|ring|rings|pendant|pendants?|brooch|brooches?|pin|pins)$/i,
+        /\b(jewelry|jewellery|necklace|bracelet|earrings?|ring|rings|pendant|brooch|pin)\b/i, // Match if these words appear anywhere
+        /^(bags?|purse|purses|wallet|wallets|handbag|handbags|backpack|backpacks|tote|totes|clutch|clutches?)$/i,
+        /\b(trucker-hat|trucker-hats?|baseball-cap|baseball-caps?|beanie|beanies?|fedora|fedoras?)\b/i, // Specific hat types
+        /\b(hat|hats?|cap|caps?)\b.*\b(trucker|baseball|truck|snapback|dad|bucket|sun|panama|straw|beanie|fedora|beret|visor)\b/i, // Hat with modifier
+        /\b(trucker|baseball|truck|snapback|dad|bucket|sun|panama|straw|beanie|fedora|beret|visor)\b.*\b(hat|hats?|cap|caps?)\b/i, // Modifier with hat
+        /^(hat|hats?|cap|caps?|beanie|beanies?|fedora|fedoras?)$/i, // Standalone hat/cap
+        /\bhats?\b/i, // Any occurrence of "hat" or "hats" (be aggressive about hats)
+        /^(sunglasses?|glasses?|eyewear|watch|watches?|timepiece|timepieces?)$/i,
         /^(belt|belts?|scarf|scarves?|gloves?|mittens?)$/i,
+        /\b(accessories|accessory|jewelry|jewellery)\b/i, // Match if category contains accessories
         
         // Underwear (only intimate wear)
         /^(underwear|lingerie|bra|bras?|panties?|boxers?|briefs?|thong|thongs?|g-string)$/i,
         /^(undershirt|undershirts?|undershirt|undershirts?|camisole|camisoles?)$/i,
         
         // Socks (only socks)
-        /^(socks?|stockings?|hosiery|pantyhose|tights?)$/i,
+        /^(socks?|stockings?|hosiery|pantyhose)$/i,
         
         // Non-clothing items
         /^(perfume|fragrance|cosmetics?|makeup|skincare|beauty-products?)$/i,
@@ -212,10 +218,26 @@ function isClothingItem(product) {
         return true;
     }
     
-    // 7. DEFAULT: If uncertain, be more inclusive (changed from false to true)
-    // Only exclude if we're very confident it's not clothing
-    console.log(`⚠️ Uncertain item - defaulting to INCLUDE: ${product.name} (type: ${productType})`);
-    return true; // Changed from false to true - be more inclusive
+    // 7. CATEGORY-BASED EXCLUSION: Check if category explicitly indicates non-clothing
+    const nonClothingCategories = ['accessories', 'accessory', 'jewelry', 'jewellery', 'footwear', 
+                                   'shoes', 'bags', 'hats', 'watches', 'electronics', 'books',
+                                   'furniture', 'home', 'beauty', 'cosmetics', 'makeup'];
+    
+    if (productType && nonClothingCategories.some(cat => productType.includes(cat))) {
+        console.log(`❌ Excluded by category: ${product.name} (category: ${productType})`);
+        return false;
+    }
+    
+    // 8. DEFAULT: Only include if category suggests clothing or we're truly uncertain
+    // Be smarter - if category is empty or very generic, include it
+    // If category suggests non-clothing, exclude it
+    if (!productType || productType === 'product' || productType === '' || productType.includes('clothing') || productType.includes('apparel')) {
+        console.log(`⚠️ Uncertain item - defaulting to INCLUDE: ${product.name} (type: ${productType || 'empty'})`);
+        return true; // Include if category is empty/generic/suggests clothing
+    } else {
+        console.log(`⚠️ Uncertain item - defaulting to EXCLUDE: ${product.name} (type: ${productType})`);
+        return false; // Exclude if category exists but doesn't suggest clothing
+    }
 }
 
 // Check if product has clothing-style size variants
@@ -393,7 +415,7 @@ async function loadClothingData() {
     }
 }
 
-// Load clothing from Shopify
+// Load clothing from Shopify with pagination support
 async function loadClothingFromShopify(storeConfig) {
     // For Shopify, we need to use the storeName as the Shopify store ID
     // storeName from the script tag contains the actual Shopify store ID (e.g., "m8ir6h-8k")
@@ -403,22 +425,21 @@ async function loadClothingFromShopify(storeConfig) {
     console.log('🛍️ Supabase store ID:', storeId);
 
     // Try multiple approaches to access Shopify store
-    const possibleUrls = [
-        `https://${shopifyStoreId}.myshopify.com/products.json`,  // Primary: use Shopify store ID
-        `https://${shopifyStoreId.replace(/[^a-zA-Z0-9-]/g, '').toLowerCase()}.myshopify.com/products.json`,
-        `https://${shopifyStoreId.replace(/\s+/g, '-')}.myshopify.com/products.json`,
-        `https://${shopifyStoreId.replace(/\s+/g, '')}.myshopify.com/products.json`
+    const possibleBaseUrls = [
+        `https://${shopifyStoreId}.myshopify.com`,
+        `https://${shopifyStoreId.replace(/[^a-zA-Z0-9-]/g, '').toLowerCase()}.myshopify.com`,
+        `https://${shopifyStoreId.replace(/\s+/g, '-')}.myshopify.com`,
+        `https://${shopifyStoreId.replace(/\s+/g, '')}.myshopify.com`
     ];
 
-    let successfulResponse = null;
+    let baseUrl = null;
     let lastError = null;
 
-    for (const url of possibleUrls) {
+    // Find working base URL
+    for (const url of possibleBaseUrls) {
         try {
-            console.log('🛍️ Trying URL:', url);
-            
-            // Try without CORS first (JSONP-like approach)
-            const response = await fetch(url, {
+            const testUrl = `${url}/products.json?limit=1`;
+            const response = await fetch(testUrl, {
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json',
@@ -426,7 +447,7 @@ async function loadClothingFromShopify(storeConfig) {
             });
             
             if (response.ok) {
-                successfulResponse = response;
+                baseUrl = url;
                 console.log('🛍️ Successfully connected to:', url);
                 break;
             } else {
@@ -438,21 +459,77 @@ async function loadClothingFromShopify(storeConfig) {
         }
     }
 
-    if (!successfulResponse) {
+    if (!baseUrl) {
         console.error('❌ All Shopify URLs failed. Last error:', lastError);
-        throw new Error(`Unable to access Shopify store: ${storeName}. Please check the store name and ensure the store is accessible.`);
+        throw new Error(`Unable to access Shopify store: ${shopifyStoreId}. Please check the store name and ensure the store is accessible.`);
     }
 
-    const data = await successfulResponse.json();
+    // Fetch all products with pagination
+    let allProducts = [];
+    let page = 1;
+    let hasMoreProducts = true;
+    const limit = 250; // Shopify max per page
+
+    console.log('🛍️ Starting paginated product fetch...');
+
+    while (hasMoreProducts) {
+        try {
+            const url = `${baseUrl}/products.json?limit=${limit}&page=${page}`;
+            console.log(`🛍️ Fetching page ${page}...`);
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                }
+            });
+
+            if (!response.ok) {
+                console.log(`🛍️ Page ${page} failed with status:`, response.status);
+                hasMoreProducts = false;
+                break;
+            }
+
+            const data = await response.json();
+            
+            if (!data.products || !Array.isArray(data.products)) {
+                console.log(`🛍️ Page ${page} has invalid format`);
+                hasMoreProducts = false;
+                break;
+            }
+
+            const pageProducts = data.products;
+            console.log(`✅ Page ${page} loaded: ${pageProducts.length} products`);
+            
+            allProducts = allProducts.concat(pageProducts);
+
+            // Check if we have more products
+            if (pageProducts.length < limit) {
+                hasMoreProducts = false;
+                console.log('🛍️ Reached last page (fewer products than limit)');
+            } else {
+                page++;
+                // Safety limit to prevent infinite loops
+                if (page > 100) {
+                    console.warn('🛍️ Reached page limit (100), stopping pagination');
+                    hasMoreProducts = false;
+                }
+            }
+
+        } catch (error) {
+            console.error(`🛍️ Error fetching page ${page}:`, error);
+            hasMoreProducts = false;
+        }
+    }
+
+    console.log(`✅ Shopify total products loaded: ${allProducts.length} (from ${page} page${page > 1 ? 's' : ''})`);
     
-    if (!data.products || !Array.isArray(data.products)) {
-        throw new Error('Invalid data format received from Shopify');
+    if (allProducts.length === 0) {
+        throw new Error('No products found in Shopify store');
     }
-
-    console.log('✅ Shopify products loaded:', data.products.length);
 
     // Convert Shopify products to widget format
-    const allProducts = data.products
+    const convertedProducts = allProducts
         .filter(product => product && product.handle && product.title)
         .map(product => {
             const firstVariant = product.variants?.[0] || {};
@@ -482,9 +559,10 @@ async function loadClothingFromShopify(storeConfig) {
         });
 
     // FILTER TO ONLY CLOTHING ITEMS
-    sampleClothing = allProducts.filter(product => isClothingItem(product));
+    sampleClothing = convertedProducts.filter(product => isClothingItem(product));
 
     console.log(`✅ Loaded ${allProducts.length} total products from Shopify`);
+    console.log(`✅ Converted ${convertedProducts.length} products`);
     console.log(`✅ Filtered to ${sampleClothing.length} clothing items`);
 }
 
