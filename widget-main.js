@@ -119,9 +119,11 @@ const CLOTHING_CATEGORIES = {
     
     // Only exclude items that are DEFINITELY not clothing (more specific)
     excludedPatterns: [
-        // Footwear (only when it's clearly footwear)
-        /^(shoes?|boots?|sandals?|sneakers?|heels?|flats?|loafers?|oxfords?|pumps?|stilettos?|wedges?|clogs?|mules?|slides?|flip-flops?)$/i,
-        /(running-shoes?|walking-shoes?|dress-shoes?|tennis-shoes?|basketball-shoes?|soccer-shoes?|hiking-boots?|work-boots?|combat-boots?)$/i,
+        // Footwear - comprehensive patterns to catch all shoe types
+        /^(shoes?|boots?|sandals?|sneakers?|heels?|flats?|loafers?|oxfords?|pumps?|stilettos?|wedges?|clogs?|mules?|slides?|flip-flops?)$/i, // Standalone
+        /\b(shoes?|boots?|sandals?|sneakers?|heels?|flats?|loafers?|oxfords?|pumps?|stilettos?|wedges?|clogs?|mules?|slides?|flip-flops?)\b/i, // Anywhere as word
+        /(running-shoes?|walking-shoes?|dress-shoes?|tennis-shoes?|basketball-shoes?|soccer-shoes?|hiking-boots?|work-boots?|combat-boots?)/i, // Compound footwear
+        /\b(footwear|shoes|boots)\b/i, // Category terms
         
         // Accessories - more comprehensive patterns
         /^(jewelry|jewellery|necklace|bracelet|bracelets?|earrings?|ring|rings|pendant|pendants?|brooch|brooches?|pin|pins)$/i,
@@ -220,7 +222,8 @@ function isClothingItem(product) {
     
     // 7. CATEGORY-BASED EXCLUSION: Check if category explicitly indicates non-clothing
     const nonClothingCategories = ['accessories', 'accessory', 'jewelry', 'jewellery', 'footwear', 
-                                   'shoes', 'bags', 'hats', 'watches', 'electronics', 'books',
+                                   'shoes', 'shoe', 'boots', 'boot', 'sandals', 'sandal',
+                                   'bags', 'hats', 'hat', 'watches', 'watch', 'electronics', 'books',
                                    'furniture', 'home', 'beauty', 'cosmetics', 'makeup'];
     
     if (productType && nonClothingCategories.some(cat => productType.includes(cat))) {
