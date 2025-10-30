@@ -2605,6 +2605,8 @@ body {
     display: flex;
     flex-direction: column;
     -webkit-overflow-scrolling: touch;
+    position: relative;
+    min-height: 0; /* Allow flex child to shrink */
 }
 
 @media (max-width: 480px) {
@@ -2650,21 +2652,34 @@ body {
 
 .browser-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 24px;
     min-height: 200px;
+    margin-bottom: 0;
+    padding: 0;
+    isolation: isolate; /* Prevent overlap */
+}
+
+/* Improve spacing on larger screens */
+@media (min-width: 1024px) {
+    .browser-grid {
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 28px;
+    }
 }
 
 /* Force exactly 2 columns on mobile for clothing browser */
 @media (max-width: 768px) {
     .browser-grid {
         grid-template-columns: 1fr 1fr !important;
-        gap: 12px;
-        padding: 0 5px;
+        gap: 16px;
+        padding: 0;
+        margin-bottom: 0;
     }
     
     .browser-clothing-card {
-        min-height: 240px;
+        min-height: auto;
+        padding: 10px;
     }
 }
 
@@ -2672,12 +2687,14 @@ body {
 @media (max-width: 480px) {
     .browser-grid {
         grid-template-columns: 1fr 1fr !important;
-        gap: 10px;
-        padding: 0 3px;
+        gap: 14px;
+        padding: 0;
+        margin-bottom: 0;
     }
     
     .browser-clothing-card {
-        min-height: 220px;
+        min-height: auto;
+        padding: 8px;
     }
 }
 
@@ -2685,12 +2702,14 @@ body {
 @media (max-width: 320px) {
     .browser-grid {
         grid-template-columns: 1fr 1fr !important;
-        gap: 8px;
-        padding: 0 2px;
+        gap: 12px;
+        padding: 0;
+        margin-bottom: 0;
     }
     
     .browser-clothing-card {
-        min-height: 200px;
+        min-height: auto;
+        padding: 6px;
     }
 }
 
@@ -2698,38 +2717,32 @@ body {
     background: #f8f8f8;
     border: 1px solid #e0e0e0;
     border-radius: 12px;
-    padding: 0;
+    padding: 12px;
     cursor: pointer;
     transition: all 0.3s ease;
     text-align: center;
     -webkit-tap-highlight-color: transparent;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-start;
+    align-items: stretch;
     width: 100%;
-    min-height: 280px;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
+    box-sizing: border-box;
+    margin: 0;
 }
 
 .browser-clothing-card::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 60px;
-    background: linear-gradient(transparent, rgba(0,0,0,0.7));
-    z-index: 1;
-    pointer-events: none;
+    /* Disable heavy gradient overlay to prevent banding visuals */
+    content: none;
 }
 
 /* Mobile-specific browser card adjustments - perfect 2-column layout */
 @media (max-width: 768px) {
     .browser-clothing-card {
-        padding: 10px 6px;
-        border-radius: 6px;
-        min-height: 180px;
+        padding: 0;
+        border-radius: 8px;
         max-width: none;
         width: 100%;
     }
@@ -2737,18 +2750,18 @@ body {
 
 @media (max-width: 480px) {
     .browser-clothing-card {
-        padding: 8px 4px;
+        padding: 0;
         border-radius: 6px;
-        min-height: 170px;
+        max-width: none;
         width: 100%;
     }
 }
 
 @media (max-width: 320px) {
     .browser-clothing-card {
-        padding: 6px 3px;
+        padding: 0;
         border-radius: 4px;
-        min-height: 160px;
+        max-width: none;
         width: 100%;
     }
 }
@@ -2758,6 +2771,7 @@ body {
     background: #f0f0f0;
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+    z-index: 2; /* Ensure hovered card is above others */
 }
 
 .browser-clothing-card:active {
@@ -2774,12 +2788,9 @@ body {
 .browser-clothing-card img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
-    position: absolute;
-    top: 0;
-    left: 0;
+    object-fit: cover; /* fill tile nicely */
+    position: static; /* avoid absolute overlapping */
     z-index: 1;
-    min-height: 100%;
 }
 
 
@@ -2855,18 +2866,21 @@ body {
 .browser-card-name {
     font-size: 12px;
     font-weight: 600;
-    color: white;
-    margin-bottom: 4px;
+    color: #333;
+    margin: 8px 0 0 0;
+    padding: 0;
     line-height: 1.3;
-    position: absolute;
-    bottom: 8px;
-    left: 8px;
-    right: 8px;
-    z-index: 3;
+    position: static;
     text-align: center;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+    text-shadow: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+    flex-shrink: 0;
+    min-height: 32px; /* Reserve space for 2 lines */
 }
 
 
@@ -2878,36 +2892,99 @@ body {
 /* Mobile-specific browser text adjustments */
 @media (max-width: 768px) {
     .browser-card-name {
-        font-size: 10px;
-        margin-bottom: 3px;
+        font-size: 11px;
+        margin-top: 6px;
+        min-height: 28px;
         line-height: 1.2;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.8);
-    }
-    
-    .browser-card-price {
-        font-size: 12px;
     }
 }
 
 @media (max-width: 480px) {
     .browser-card-name {
-        font-size: 9px;
-        margin-bottom: 2px;
-    }
-    
-    .browser-card-price {
-        font-size: 11px;
+        font-size: 10px;
+        margin-top: 4px;
+        min-height: 24px;
     }
 }
 
 @media (max-width: 320px) {
     .browser-card-name {
-        font-size: 8px;
-        margin-bottom: 2px;
+        font-size: 9px;
+        margin-top: 4px;
+        min-height: 22px;
+    }
+}
+
+/* Pagination Controls - Always at bottom, always on top */
+.browser-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 20px;
+    flex-wrap: wrap;
+    width: 100%;
+    flex-shrink: 0; /* Don't shrink */
+    background: #ffffff;
+    border-top: 1px solid #e0e0e0;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+    z-index: 10;
+}
+
+.pagination-btn {
+    padding: 8px 16px;
+    border: 1px solid #e0e0e0;
+    background: #fff;
+    color: #333;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    min-width: 44px;
+    text-align: center;
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: #f5f5f5;
+    border-color: #ccc;
+    transform: translateY(-1px);
+}
+
+.pagination-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.pagination-btn.active {
+    background: #333;
+    color: #fff;
+    border-color: #333;
+    font-weight: 600;
+}
+
+.pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: #f5f5f5;
+}
+
+.pagination-ellipsis {
+    padding: 8px 4px;
+    color: #999;
+    font-size: 14px;
+}
+
+@media (max-width: 480px) {
+    .browser-pagination {
+        gap: 4px;
+        margin-top: 20px;
+        padding: 15px 0;
     }
     
-    .browser-card-price {
-        font-size: 10px;
+    .pagination-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+        min-width: 36px;
     }
 }
 
@@ -3382,6 +3459,43 @@ body {
     color: #fff !important;
 }
 
+/* Pagination Theme Support */
+.theme-black .browser-pagination {
+    background: #23272f !important;
+    border-top: 1px solid #fff !important;
+}
+
+.theme-cream .browser-pagination {
+    background: #fdf6ee !important;
+    border-top: 1px solid #e8e0d4 !important;
+}
+
+.theme-black .pagination-btn {
+    background: #23272f !important;
+    border-color: #fff !important;
+    color: #fff !important;
+}
+
+.theme-black .pagination-btn:hover:not(:disabled) {
+    background: #2d3239 !important;
+}
+
+.theme-black .pagination-btn.active {
+    background: #fff !important;
+    color: #23272f !important;
+    border-color: #fff !important;
+}
+
+.theme-black .pagination-btn:disabled {
+    background: #181a1b !important;
+    border-color: #444 !important;
+    color: #666 !important;
+}
+
+.theme-black .pagination-ellipsis {
+    color: #999 !important;
+}
+
 /* Wardrobe Modal Theme Support */
 .theme-black .wardrobe-modal {
     background: rgba(0,0,0,0.8) !important;
@@ -3501,6 +3615,41 @@ body {
 .theme-black .wardrobe-empty p {
     color: #fff !important;
 }
+
+/* Browser image wrapper - ensures consistent aspect ratio and prevents overlap */
+.browser-image-wrap {
+    width: 100%;
+    aspect-ratio: 3 / 4; /* consistent 3:4 ratio */
+    background: #f0f0f0;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+/* Ensure images never overflow or overlap */
+.browser-image-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* show full garment within bounds */
+    display: block;
+    position: static;
+}
+
+/* Override any conflicting image rules */
+.browser-clothing-card img {
+    position: static !important;
+    max-width: 100%;
+    height: auto;
+}
+
+.browser-clothing-card::after {
+    content: none !important;
+}
+
     </style>
 </head>
 <body>
@@ -3615,6 +3764,9 @@ body {
                 <div id="noResultsMessage" class="no-results" style="display: none;">
                     No items found. Try a different search term.
                 </div>
+            </div>
+            <div id="browserPagination" class="browser-pagination">
+                <!-- Pagination controls will be populated here -->
             </div>
         </div>
     </div>
