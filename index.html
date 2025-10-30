@@ -275,8 +275,8 @@ body {
     .virtual-tryon-widget.widget-minimized {
         bottom: 20px !important;
         right: 20px !important;
-        width: 160px !important;
-        height: 72px !important;
+        width: 64px !important;
+        height: 64px !important;
         transform-origin: right bottom !important;
         /* No left positioning at all */
         left: auto !important;
@@ -302,19 +302,20 @@ body {
 }
 
 .widget-minimized {
-    width: 160px !important;
+    width: 72px !important;
     height: 72px !important;
-    border-radius: 10px !important;
+    border-radius: 8px !important;
     cursor: pointer;
-    background: linear-gradient(135deg, #ffffff 0%, #f6f6f6 100%);
+    background: linear-gradient(135deg, #f0f0f0 0%, #ffffff 50%, #f8f8f8 100%);
     display: flex !important;
     align-items: center;
     justify-content: center;
+    font-size: 24px;
     overflow: hidden !important;
-    box-shadow: 0 16px 46px rgba(0,0,0,0.15);
-    border: 1px solid #e0e0e0;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+    animation: subtleGlow 4s ease-in-out infinite;
+    border: 1px solid #d0d0d0;
     transform: scale(1);
-    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
 }
 
 @keyframes subtleGlow {
@@ -338,21 +339,18 @@ body {
 .widget-minimized::after {
     content: 'VIRTUAL\ATRY ON';
     display: block;
-    color: #111;
+    color: #333;
     font-size: 11px;
-    font-weight: 900;
+    font-weight: 800;
     text-align: center;
     line-height: 1.2;
-    letter-spacing: .8px;
+    letter-spacing: 0.8px;
     white-space: pre-line;
     text-transform: uppercase;
+    text-shadow: 0 2px 4px rgba(255,255,255,0.8);
 }
 
-.widget-minimized:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 20px 56px rgba(0,0,0,0.2);
-    border-color: #d0d0d0;
-}
+
 
 /* Header - Clean White */
 .widget-header {
