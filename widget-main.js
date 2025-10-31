@@ -1862,6 +1862,166 @@ async function detectFaceInImage(imageSrc) {
     }
 }
 
+// Body detection using TensorFlow.js MoveNet
+let tfLoaded = false;
+let tfLoading = false;
+let movenetModel = null;
+
+async function loadTensorFlow() {
+    if (tfLoaded || tfLoading) return tfLoaded;
+    
+    tfLoading = true;
+    try {
+        // Check if TensorFlow.js is available
+        if (typeof tf === 'undefined') {
+            // Load TensorFlow.js from CDN
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js';
+                script.onload = () => {
+                    tfLoaded = true;
+                    tfLoading = false;
+                    resolve();
+                };
+                script.onerror = () => {
+                    console.log('TensorFlow.js failed to load');
+                    tfLoading = false;
+                    tfLoaded = false;
+                    resolve(); // Don't reject, graceful fallback
+                };
+                document.head.appendChild(script);
+            });
+        } else {
+            tfLoaded = true;
+            tfLoading = false;
+        }
+    } catch (error) {
+        console.log('TensorFlow.js initialization failed:', error);
+        tfLoading = false;
+        tfLoaded = false;
+    }
+    
+    return tfLoaded;
+}
+
+async function loadMoveNetModel() {
+    if (!tfLoaded) {
+        await loadTensorFlow();
+    }
+    
+    if (!tfLoaded || typeof tf === 'undefined') {
+        return null;
+    }
+    
+    if (movenetModel) {
+        return movenetModel;
+    }
+    
+    try {
+        // Load MoveNet using TensorFlow Hub or CDN
+        // Try TensorFlow Hub first (more reliable)
+        const modelUrl = 'https://tfhub.dev/google/tfjs-model/movenet/singlepose/lightning/4';
+        movenetModel = await tf.loadGraphModel(modelUrl, { fromTFHub: true });
+        return movenetModel;
+    } catch (error) {
+        console.log('MoveNet model loading from TFHub failed:', error);
+        // Try alternative: use pose-detection library from unpkg
+        try {
+            const alternativeUrl = 'https://cdn.jsdelivr.net/npm/@tensorflow-models/movenet@2.1.0/dist/movenet_singlepose_lightning_4/model.json';
+            movenetModel = await tf.loadGraphModel(alternativeUrl);
+            return movenetModel;
+        } catch (altError) {
+            console.log('Alternative MoveNet loading also failed:', altError);
+            // Final fallback: try loading from unpkg
+            try {
+                const fallbackUrl = 'https://unpkg.com/@tensorflow-models/movenet@2.1.0/dist/movenet_singlepose_lightning_4/model.json';
+                movenetModel = await tf.loadGraphModel(fallbackUrl);
+                return movenetModel;
+            } catch (finalError) {
+                console.log('All MoveNet loading attempts failed:', finalError);
+                return null;
+            }
+        }
+    }
+}
+
+async function detectBodyInImage(imageSrc) {
+    if (!tfLoaded) {
+        await loadTensorFlow();
+    }
+    
+    if (!tfLoaded || typeof tf === 'undefined') {
+        return { detected: false, warning: null }; // Silent fail
+    }
+    
+    try {
+        const model = await loadMoveNetModel();
+        if (!model) {
+            return { detected: false, warning: null }; // Silent fail if model not available
+        }
+        
+        // Load and preprocess image
+        const img = new Image();
+        // Only set crossOrigin for external URLs, not data URLs
+        if (!imageSrc.startsWith('data:')) {
+            img.crossOrigin = 'anonymous';
+        }
+        img.src = imageSrc;
+        
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+        });
+        
+        // Resize image for MoveNet (model expects 192x192 or 256x256)
+        const tensor = tf.browser.fromPixels(img);
+        const resized = tf.image.resizeBilinear(tensor, [192, 192]);
+        const casted = resized.cast('int32');
+        const expanded = casted.expandDims(0);
+        const normalized = expanded.div(127.5).sub(1);
+        
+        // Run inference
+        const predictions = await model.executeAsync(normalized);
+        
+        // Extract keypoints
+        const keypoints = await predictions.data();
+        
+        // Clean up tensors
+        tensor.dispose();
+        resized.dispose();
+        casted.dispose();
+        expanded.dispose();
+        normalized.dispose();
+        predictions.dispose();
+        
+        // MoveNet returns 17 keypoints with confidence scores
+        // Important keypoints for body detection: nose, shoulders, hips, knees, ankles
+        // Keypoint indices: 0=nose, 5=left shoulder, 6=right shoulder, 11=left hip, 12=right hip
+        const keypointConfidences = [];
+        for (let i = 0; i < 17; i++) {
+            const confidence = keypoints[i * 3 + 2]; // Each keypoint has [y, x, confidence]
+            keypointConfidences.push(confidence);
+        }
+        
+        // Check if we have enough keypoints with good confidence
+        // Require at least shoulders and hips (key points for body)
+        const importantKeypoints = [keypointConfidences[5], keypointConfidences[6], keypointConfidences[11], keypointConfidences[12]];
+        const detectedKeypoints = importantKeypoints.filter(conf => conf > 0.3).length;
+        
+        // If we detect at least 2 important keypoints, consider body detected
+        const bodyDetected = detectedKeypoints >= 2;
+        
+        return {
+            detected: bodyDetected,
+            keypointCount: detectedKeypoints,
+            warning: !bodyDetected ? 'No body detected. For best try-on results, use a full-body photo with you standing straight and clearly visible.' : null
+        };
+    } catch (error) {
+        console.log('Body detection error:', error);
+        return { detected: false, warning: null }; // Silent fail
+    }
+}
+
 function validateImageFile(file) {
     const maxSize = 10 * 1024 * 1024; // 10MB
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -1935,10 +2095,16 @@ async function validateImageQuality(imageSrc) {
         warnings.push('Image contrast is low. Better contrast will improve try-on results.');
     }
     
-    // Optional face detection (non-blocking)
+    // Optional face detection (non-blocking, warning only)
     const faceResult = await detectFaceInImage(imageSrc);
     if (faceResult.warning && !faceResult.detected) {
         warnings.push(faceResult.warning);
+    }
+    
+    // Body detection (non-blocking, warning only)
+    const bodyResult = await detectBodyInImage(imageSrc);
+    if (bodyResult.warning && !bodyResult.detected) {
+        warnings.push(bodyResult.warning);
     }
     
     return {
