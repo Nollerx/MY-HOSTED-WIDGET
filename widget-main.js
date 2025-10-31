@@ -869,6 +869,8 @@ let generalChatHistory = [];
 let currentTryOnId = null;
 let currentFeaturedItem = null;
 let isTryOnProcessing = false; // Track if try-on is currently processing
+let browserCurrentPage = 1; // Current page in browser
+let browserItemsPerPage = 24; // Items per page (6 columns x 4 rows)
 
 function detectDevice() {
     const userAgent = navigator.userAgent.toLowerCase();
@@ -915,6 +917,17 @@ function takePicture() {
         return;
     }
 
+    // Show best practices modal if not dismissed
+    if (checkShouldShowBestPractices()) {
+        pendingPhotoAction = proceedWithTakePicture;
+        showBestPracticesModal();
+        return;
+    }
+    
+    proceedWithTakePicture();
+}
+
+function proceedWithTakePicture() {
     try {
         const cameraInput = document.getElementById('cameraInput');
         
@@ -955,6 +968,17 @@ function chooseFromGallery() {
         return;
     }
 
+    // Show best practices modal if not dismissed
+    if (checkShouldShowBestPractices()) {
+        pendingPhotoAction = proceedWithChooseFromGallery;
+        showBestPracticesModal();
+        return;
+    }
+    
+    proceedWithChooseFromGallery();
+}
+
+function proceedWithChooseFromGallery() {
     try {
         const photoInput = document.getElementById('photoInput');
         
@@ -988,7 +1012,95 @@ function chooseFromGallery() {
     }
 }
 
+// Best Practices Modal Functions
+function checkShouldShowBestPractices() {
+    try {
+        const dismissed = localStorage.getItem('vtow_best_practices_dismissed');
+        return dismissed !== 'true';
+    } catch (error) {
+        console.error('Error checking best practices preference:', error);
+        return true; // Default to showing if we can't check
+    }
+}
+
+function dismissBestPractices(dontShowAgain) {
+    try {
+        if (dontShowAgain) {
+            localStorage.setItem('vtow_best_practices_dismissed', 'true');
+        }
+    } catch (error) {
+        console.error('Error saving best practices preference:', error);
+    }
+}
+
+function showBestPracticesModal() {
+    const modal = document.getElementById('bestPracticesModal');
+    const backdrop = document.getElementById('bestPracticesBackdrop');
+    
+    if (modal && backdrop) {
+        modal.classList.add('active');
+        backdrop.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeBestPracticesModal(skipPendingAction = false) {
+    const modal = document.getElementById('bestPracticesModal');
+    const backdrop = document.getElementById('bestPracticesBackdrop');
+    
+    if (modal && backdrop) {
+        modal.classList.remove('active');
+        backdrop.classList.remove('active');
+        document.body.style.overflow = '';
+        
+        // Execute pending photo action if any (when closing via backdrop/close button, not Got It)
+        if (!skipPendingAction && pendingPhotoAction) {
+            const action = pendingPhotoAction;
+            pendingPhotoAction = null;
+            setTimeout(() => {
+                action();
+            }, 300);
+        }
+    }
+}
+
+let pendingPhotoAction = null; // Track pending photo action after modal close
+
+function handleBestPracticesDismiss() {
+    const dontShowAgain = document.getElementById('dontShowAgainCheckbox');
+    dismissBestPractices(dontShowAgain?.checked || false);
+    
+    // Clear pending action before closing (we'll execute it manually)
+    const action = pendingPhotoAction;
+    pendingPhotoAction = null;
+    
+    closeBestPracticesModal(true); // Skip pending action execution in close
+    
+    // Execute pending photo action if any
+    if (action) {
+        setTimeout(() => {
+            action();
+        }, 300);
+    }
+}
+
 function handlePhotoUploadClick() {
+    // Show best practices modal if not dismissed
+    if (checkShouldShowBestPractices()) {
+        // Set up pending action
+        pendingPhotoAction = () => {
+            if (!isMobile) {
+                const photoInput = document.getElementById('photoInput');
+                if (photoInput) {
+                    photoInput.click();
+                }
+            }
+        };
+        showBestPracticesModal();
+        return;
+    }
+    
+    // If modal was dismissed, proceed normally
     if (isMobile) {
         return;
     } else {
@@ -1505,14 +1617,14 @@ function handleGeneralMessage(message) {
     addBotMessage(randomResponse);
 }
 
-function handlePhotoUpload(event) {
+async function handlePhotoUpload(event) {
     const file = event.target.files[0];
     if (!file) {
         console.log('No file selected');
         return;
     }
     
-    // Enhanced file validation
+    // Basic file validation first
     const validationResult = validateImageFile(file);
     if (!validationResult.isValid) {
         showSuccessNotification('Invalid File', validationResult.error, 4000, true);
@@ -1527,12 +1639,43 @@ function handlePhotoUpload(event) {
     
     const reader = new FileReader();
     
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         try {
-            userPhoto = e.target.result;
+            const imageDataUrl = e.target.result;
+            
+            // Show analyzing state
+            const uploadText = uploadArea?.querySelector('.upload-text:not(#changePhotoText)');
+            if (uploadText) {
+                const originalText = uploadText.textContent;
+                uploadText.textContent = 'Analyzing image quality...';
+            }
+            
+            // Enhanced quality validation
+            const qualityResult = await validateImageQuality(imageDataUrl);
+            
+            if (!qualityResult.isValid) {
+                // Restore original text
+                if (uploadText) {
+                    uploadText.textContent = uploadArea.querySelector('.upload-icon') ? 'Tap to upload full body image' : 'Click to upload full body image';
+                }
+                showSuccessNotification('Image Quality Issue', qualityResult.error, 5000, true);
+                if (uploadArea) {
+                    uploadArea.classList.remove('uploading');
+                }
+                return;
+            }
+            
+            // Show warnings if any (non-blocking)
+            if (qualityResult.warnings && qualityResult.warnings.length > 0) {
+                const warningMessage = qualityResult.warnings.join(' ');
+                showSuccessNotification('Quality Tips', warningMessage, 4000, false);
+            }
+            
+            // Image passed all checks
+            userPhoto = imageDataUrl;
             userPhotoFileId = 'photo_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             
-            updatePhotoPreview(e.target.result);
+            updatePhotoPreview(imageDataUrl);
             updateTryOnButton();
             
             // Haptic feedback on mobile
@@ -1563,6 +1706,162 @@ function handlePhotoUpload(event) {
     reader.readAsDataURL(file);
 }
 
+// Image Quality Analysis Functions
+async function analyzeImageQuality(imageSrc) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        // Only set crossOrigin for external URLs, not data URLs
+        if (!imageSrc.startsWith('data:')) {
+            img.crossOrigin = 'anonymous';
+        }
+        
+        img.onload = function() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            
+            ctx.drawImage(img, 0, 0);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const pixels = imageData.data;
+            
+            // Calculate aspect ratio
+            const aspectRatio = canvas.width / canvas.height;
+            const isPortrait = canvas.height > canvas.width;
+            const widthHeightRatio = canvas.width / canvas.height;
+            
+            // Calculate brightness and contrast
+            let sumLuminance = 0;
+            let sumSquaredDiff = 0;
+            const pixelCount = pixels.length / 4;
+            
+            for (let i = 0; i < pixels.length; i += 4) {
+                const r = pixels[i];
+                const g = pixels[i + 1];
+                const b = pixels[i + 2];
+                // Calculate luminance using relative luminance formula
+                const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                sumLuminance += luminance;
+            }
+            
+            const averageBrightness = sumLuminance / pixelCount;
+            
+            // Calculate contrast (standard deviation of luminance)
+            for (let i = 0; i < pixels.length; i += 4) {
+                const r = pixels[i];
+                const g = pixels[i + 1];
+                const b = pixels[i + 2];
+                const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                const diff = luminance - averageBrightness;
+                sumSquaredDiff += diff * diff;
+            }
+            
+            const contrast = Math.sqrt(sumSquaredDiff / pixelCount);
+            
+            resolve({
+                width: canvas.width,
+                height: canvas.height,
+                aspectRatio: aspectRatio,
+                isPortrait: isPortrait,
+                widthHeightRatio: widthHeightRatio,
+                brightness: averageBrightness,
+                contrast: contrast
+            });
+        };
+        
+        img.onerror = function() {
+            resolve(null);
+        };
+        
+        img.src = imageSrc;
+    });
+}
+
+// Optional face detection using Face-API.js
+let faceApiLoaded = false;
+let faceApiLoading = false;
+
+async function loadFaceApi() {
+    if (faceApiLoaded || faceApiLoading) return faceApiLoaded;
+    
+    faceApiLoading = true;
+    try {
+        // Check if Face-API.js is available
+        if (typeof faceapi === 'undefined') {
+            // Try to load from CDN
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js';
+                script.onload = () => {
+                    setTimeout(async () => {
+                        try {
+                            await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model');
+                            faceApiLoaded = true;
+                            faceApiLoading = false;
+                            resolve();
+                        } catch (e) {
+                            console.log('Face-API model loading failed:', e);
+                            faceApiLoading = false;
+                            resolve(); // Don't reject, just continue without face detection
+                        }
+                    }, 1000);
+                };
+                script.onerror = () => {
+                    console.log('Face-API.js failed to load');
+                    faceApiLoading = false;
+                    resolve(); // Don't reject, graceful fallback
+                };
+                document.head.appendChild(script);
+            });
+        } else {
+            faceApiLoaded = true;
+            faceApiLoading = false;
+        }
+    } catch (error) {
+        console.log('Face-API initialization failed:', error);
+        faceApiLoading = false;
+    }
+    
+    return faceApiLoaded;
+}
+
+async function detectFaceInImage(imageSrc) {
+    if (!faceApiLoaded) {
+        await loadFaceApi();
+    }
+    
+    if (!faceApiLoaded || typeof faceapi === 'undefined') {
+        return { detected: false, warning: null }; // Silent fail - don't show warning if not available
+    }
+    
+    try {
+        // Handle data URLs and regular URLs
+        let img;
+        if (imageSrc.startsWith('data:')) {
+            // For data URLs, create an image element
+            img = new Image();
+            img.src = imageSrc;
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+            });
+        } else {
+            img = await faceapi.fetchImage(imageSrc);
+        }
+        
+        const detections = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions());
+        
+        return {
+            detected: detections.length > 0,
+            count: detections.length,
+            warning: detections.length === 0 ? 'No face detected. For best results, use a photo with your face clearly visible.' : null
+        };
+    } catch (error) {
+        console.log('Face detection error:', error);
+        return { detected: false, warning: null }; // Silent fail
+    }
+}
+
 function validateImageFile(file) {
     const maxSize = 10 * 1024 * 1024; // 10MB
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -1586,6 +1885,68 @@ function validateImageFile(file) {
     }
     
     return { isValid: true };
+}
+
+// Enhanced validation with quality checks
+async function validateImageQuality(imageSrc) {
+    const warnings = [];
+    const errors = [];
+    
+    // Analyze image quality
+    const analysis = await analyzeImageQuality(imageSrc);
+    
+    if (!analysis) {
+        return {
+            isValid: false,
+            error: 'Failed to analyze image. Please try a different image.',
+            warnings: []
+        };
+    }
+    
+    // Check minimum resolution
+    const MIN_RESOLUTION = 512;
+    if (analysis.width < MIN_RESOLUTION || analysis.height < MIN_RESOLUTION) {
+        errors.push(`Image resolution is too low. Please use an image at least ${MIN_RESOLUTION}x${MIN_RESOLUTION} pixels.`);
+    }
+    
+    // Check aspect ratio (portrait orientation)
+    if (!analysis.isPortrait) {
+        errors.push('Please use a portrait orientation image (height should be greater than width).');
+    } else {
+        // Check width/height ratio (should be between 0.5 and 0.8)
+        if (analysis.widthHeightRatio < 0.5 || analysis.widthHeightRatio > 0.8) {
+            errors.push('Image aspect ratio is not ideal. Please use a full-body portrait photo.');
+        }
+    }
+    
+    // Check brightness
+    if (analysis.brightness < 0.15) {
+        errors.push('Image is too dark. Please use a photo with better lighting.');
+    } else if (analysis.brightness > 0.9) {
+        errors.push('Image is too bright. Please use a photo with more balanced lighting.');
+    } else if (analysis.brightness < 0.25 || analysis.brightness > 0.8) {
+        warnings.push('Lighting could be improved for better results.');
+    }
+    
+    // Check contrast
+    if (analysis.contrast < 0.05) {
+        errors.push('Image has insufficient contrast. Please use a clearer, more defined photo.');
+    } else if (analysis.contrast < 0.1) {
+        warnings.push('Image contrast is low. Better contrast will improve try-on results.');
+    }
+    
+    // Optional face detection (non-blocking)
+    const faceResult = await detectFaceInImage(imageSrc);
+    if (faceResult.warning && !faceResult.detected) {
+        warnings.push(faceResult.warning);
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        error: errors.length > 0 ? errors.join(' ') : null,
+        warnings: warnings,
+        analysis: analysis
+    };
 }
 
 function updatePhotoPreview(imageData) {
@@ -1623,6 +1984,10 @@ function openClothingBrowser() {
     backdrop.classList.add('active');
     document.body.style.overflow = 'hidden';
     
+    // Reset pagination
+    browserCurrentPage = 1;
+    filteredClothing = [...sampleClothing];
+    
     console.log('Opening clothing browser, sampleClothing length:', sampleClothing.length);
     renderBrowserGrid();
 }
@@ -1656,30 +2021,19 @@ function renderBrowserGrid() {
         grid.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">Loading products...</div>';
         loadClothingData().then(() => {
             console.log('Data loaded, re-rendering grid...');
+            filteredClothing = [...sampleClothing];
             renderBrowserGrid();
         });
         return;
     }
     
-    console.log('Rendering grid with', sampleClothing.length, 'items');
-    let gridHTML = '';
-    sampleClothing.forEach((item, index) => {
-        const isSelected = selectedClothing === item.id;
-        const selectedClass = isSelected ? 'selected' : '';
-        
-        console.log(`Item ${index}:`, item.name, 'Image:', item.image_url);
-        
-        gridHTML += `
-            <div class="browser-clothing-card ${selectedClass}" onclick="selectClothingFromBrowser('${item.id}')">
-                <img src="${item.image_url}" alt="${item.name}" loading="lazy">
-                <div class="browser-card-name">${item.name}</div>
-            </div>
-        `;
-    });
+    // Reset filtered clothing if needed
+    if (filteredClothing.length === 0 || filteredClothing.length === sampleClothing.length) {
+        filteredClothing = [...sampleClothing];
+    }
     
-    grid.innerHTML = gridHTML;
-    console.log('Grid HTML set, length:', gridHTML.length);
-    console.log('Grid display style:', grid.style.display);
+    // Use updateBrowserDisplay to handle pagination
+    updateBrowserDisplay();
 }
 
 function selectClothingFromBrowser(clothingId) {
@@ -1698,6 +2052,9 @@ function selectClothingFromBrowser(clothingId) {
 
 function handleBrowserSearch() {
     const searchTerm = document.getElementById('browserSearch').value.toLowerCase().trim();
+    
+    // Reset to page 1 when searching
+    browserCurrentPage = 1;
     
     if (searchTerm === '') {
         filteredClothing = [...sampleClothing];
@@ -1725,12 +2082,29 @@ function updateBrowserDisplay() {
         grid.style.display = 'none';
         noResults.style.display = 'block';
         resultsCount.textContent = '';
+        updatePaginationControls(0);
     } else {
         grid.style.display = 'grid';
         noResults.style.display = 'none';
-        resultsCount.textContent = `${filteredClothing.length} item${filteredClothing.length !== 1 ? 's' : ''} found`;
         
-        filteredClothing.forEach(item => {
+        // Filter out items without images
+        const itemsWithImages = filteredClothing.filter(item => {
+            return item && item.image_url && item.image_url.trim() !== '' && 
+                   !item.image_url.includes('placeholder') && 
+                   !item.image_url.includes('data:image/svg');
+        });
+        
+        // Calculate pagination with filtered items
+        const totalPages = Math.ceil(itemsWithImages.length / browserItemsPerPage);
+        const startIndex = (browserCurrentPage - 1) * browserItemsPerPage;
+        const endIndex = startIndex + browserItemsPerPage;
+        const itemsForCurrentPage = itemsWithImages.slice(startIndex, endIndex);
+        
+        // Update results count
+        resultsCount.textContent = `Showing ${startIndex + 1}-${Math.min(endIndex, itemsWithImages.length)} of ${itemsWithImages.length} items`;
+        
+        // Render only items for current page
+        itemsForCurrentPage.forEach(item => {
             const isSelected = selectedClothing === item.id;
             const selectedClass = isSelected ? 'selected' : '';
             
@@ -1738,14 +2112,112 @@ function updateBrowserDisplay() {
             cardElement.className = `browser-clothing-card ${selectedClass}`;
             cardElement.onclick = () => selectClothingFromBrowser(item.id);
             
+            const safeName = (item.name || '').replace(/\"/g, '&quot;');
+            const imgHtml = `<img src="${item.image_url}" alt="${safeName}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22400%22 viewBox=%220 0 300 400%22%3E%3Crect width=%22300%22 height=%22400%22 fill=%22%23f0f0f0%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%23999%22 font-family=%22Arial%22 font-size=%2214%22%3ENo Image%3C/text%3E%3C/svg%3E'">`;
+            
             cardElement.innerHTML = `
-                <img src="${item.image_url}" alt="${item.name}" loading="lazy">
-                <div class="browser-card-name">${item.name}</div>
+                <div class="browser-image-wrap">${imgHtml}</div>
+                <div class="browser-card-name">${safeName}</div>
             `;
             
             grid.appendChild(cardElement);
         });
+        
+    // Update pagination controls
+    updatePaginationControls(totalPages);
     }
+}
+
+// Pagination navigation functions
+function goToBrowserPage(page) {
+    const totalPages = Math.ceil(filteredClothing.length / browserItemsPerPage);
+    
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    
+    browserCurrentPage = page;
+    updateBrowserDisplay();
+    
+    // Scroll to top of grid
+    const grid = document.getElementById('browserGrid');
+    if (grid) {
+        grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function nextBrowserPage() {
+    const totalPages = Math.ceil(filteredClothing.length / browserItemsPerPage);
+    if (browserCurrentPage < totalPages) {
+        goToBrowserPage(browserCurrentPage + 1);
+    }
+}
+
+function prevBrowserPage() {
+    if (browserCurrentPage > 1) {
+        goToBrowserPage(browserCurrentPage - 1);
+    }
+}
+
+function updatePaginationControls(totalPages) {
+    const paginationContainer = document.getElementById('browserPagination');
+    if (!paginationContainer) return;
+    
+    if (totalPages <= 1) {
+        paginationContainer.style.display = 'none';
+        return;
+    }
+    
+    paginationContainer.style.display = 'flex';
+    
+    // Build pagination HTML
+    let paginationHTML = '';
+    
+    // Previous button
+    paginationHTML += `
+        <button class="pagination-btn" onclick="prevBrowserPage()" ${browserCurrentPage === 1 ? 'disabled' : ''}>
+            ← Previous
+        </button>
+    `;
+    
+    // Page numbers
+    const maxVisiblePages = 5;
+    let startPage = Math.max(1, browserCurrentPage - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+    
+    if (endPage - startPage < maxVisiblePages - 1) {
+        startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    }
+    
+    if (startPage > 1) {
+        paginationHTML += `<button class="pagination-btn" onclick="goToBrowserPage(1)">1</button>`;
+        if (startPage > 2) {
+            paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+        }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        paginationHTML += `
+            <button class="pagination-btn ${i === browserCurrentPage ? 'active' : ''}" onclick="goToBrowserPage(${i})">
+                ${i}
+            </button>
+        `;
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            paginationHTML += `<span class="pagination-ellipsis">...</span>`;
+        }
+        paginationHTML += `<button class="pagination-btn" onclick="goToBrowserPage(${totalPages})">${totalPages}</button>`;
+    }
+    
+    // Next button
+    paginationHTML += `
+        <button class="pagination-btn" onclick="nextBrowserPage()" ${browserCurrentPage === totalPages ? 'disabled' : ''}>
+            Next →
+        </button>
+    `;
+    
+    paginationContainer.innerHTML = paginationHTML;
 }
 
 // Fixed startTryOn function - always pass tryOnId as parameter
