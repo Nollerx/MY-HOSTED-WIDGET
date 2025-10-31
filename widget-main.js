@@ -1994,11 +1994,46 @@ async function detectBodyInImage(imageSrc) {
         const int32Tensor = expanded.cast('int32');
         
         // Run inference - MoveNet expects input shape [1, 192, 192, 3] with int32 dtype
-        const predictions = await model.executeAsync(int32Tensor);
+        // Use execute() instead of executeAsync() as suggested by the warning
+        const predictions = model.execute(int32Tensor);
         
-        // MoveNet output shape is [1, 17, 3] where 3 is [y, x, confidence]
+        // MoveNet output shape can vary - get the data
         const keypointsArray = await predictions.array();
-        const keypoints = keypointsArray[0]; // Get first (and only) pose
+        
+        console.log('MoveNet output shape:', predictions.shape);
+        console.log('MoveNet output array structure:', keypointsArray);
+        
+        // Handle different output shapes - flatten to get the keypoints
+        let keypoints;
+        
+        // MoveNet can return different shapes depending on the model version
+        // Try to extract the [17, 3] array from various nested structures
+        if (Array.isArray(keypointsArray)) {
+            // Flatten nested arrays until we find the keypoints structure
+            let current = keypointsArray;
+            while (Array.isArray(current) && current.length === 1 && Array.isArray(current[0])) {
+                current = current[0];
+            }
+            
+            // Now current should be [17, 3] or similar
+            if (Array.isArray(current) && current.length >= 17) {
+                keypoints = current;
+            } else {
+                console.log('Unexpected keypoints structure, trying alternative extraction');
+                // Try accessing directly based on common shapes
+                if (Array.isArray(keypointsArray[0]) && Array.isArray(keypointsArray[0][0])) {
+                    keypoints = keypointsArray[0][0];
+                } else if (Array.isArray(keypointsArray[0])) {
+                    keypoints = keypointsArray[0];
+                } else {
+                    keypoints = keypointsArray;
+                }
+            }
+        } else {
+            keypoints = keypointsArray;
+        }
+        
+        console.log('Extracted keypoints:', keypoints);
         
         // Clean up tensors
         tensor.dispose();
@@ -2011,9 +2046,21 @@ async function detectBodyInImage(imageSrc) {
         // Important keypoints for body detection: shoulders, hips
         // Keypoint indices: 0=nose, 5=left shoulder, 6=right shoulder, 11=left hip, 12=right hip
         const keypointConfidences = [];
+        
+        // Ensure we have valid keypoints array
+        if (!keypoints || !Array.isArray(keypoints) || keypoints.length < 17) {
+            console.log('Invalid keypoints format:', keypoints);
+            return { detected: false, warning: null }; // Silent fail
+        }
+        
         for (let i = 0; i < 17; i++) {
-            const confidence = keypoints[i][2]; // Each keypoint is [y, x, confidence]
-            keypointConfidences.push(confidence);
+            if (keypoints[i] && Array.isArray(keypoints[i]) && keypoints[i].length >= 3) {
+                const confidence = keypoints[i][2]; // Each keypoint is [y, x, confidence]
+                keypointConfidences.push(confidence);
+            } else {
+                // If keypoint format is unexpected, use 0 confidence
+                keypointConfidences.push(0);
+            }
         }
         
         // Check if we have enough keypoints with good confidence
