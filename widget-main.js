@@ -1963,13 +1963,10 @@ async function detectBodyInImage(imageSrc) {
     }
     
     try {
-        console.log('Loading MoveNet model for body detection...');
         const model = await loadMoveNetModel();
         if (!model) {
-            console.log('MoveNet model not available, skipping body detection');
             return { detected: false, warning: null }; // Silent fail if model not available
         }
-        console.log('MoveNet model loaded successfully');
         
         // Load and preprocess image
         const img = new Image();
@@ -1998,23 +1995,14 @@ async function detectBodyInImage(imageSrc) {
         const predictions = model.execute(int32Tensor);
         
         // MoveNet output shape can vary - get the data
-        // First, check the tensor shape to understand the structure
-        const outputShape = predictions.shape;
-        console.log('MoveNet output tensor shape:', outputShape);
-        
         // Get the raw array data
         let keypointsArray;
         try {
             keypointsArray = await predictions.array();
-            console.log('MoveNet output array type:', typeof keypointsArray);
-            console.log('MoveNet output array isArray:', Array.isArray(keypointsArray));
-            console.log('MoveNet output array length:', Array.isArray(keypointsArray) ? keypointsArray.length : 'N/A');
         } catch (e) {
             console.log('Error getting array from predictions:', e);
             return { detected: false, warning: null };
         }
-        
-        console.log('MoveNet output array structure (first level):', keypointsArray);
         
         // Handle different output shapes - flatten to get the keypoints
         let keypoints = null;
@@ -2056,7 +2044,6 @@ async function detectBodyInImage(imageSrc) {
             
             if (!keypoints) {
                 // Fallback: try common access patterns
-                console.log('Trying fallback extraction methods...');
                 if (keypointsArray[0]?.[0]?.length === 3 && keypointsArray[0][0].length >= 17) {
                     keypoints = keypointsArray[0][0];
                 } else if (keypointsArray[0]?.length >= 17) {
@@ -2066,9 +2053,10 @@ async function detectBodyInImage(imageSrc) {
                 }
             }
             
-            console.log('Extracted keypoints:', keypoints);
-            console.log('Keypoints length:', keypoints ? keypoints.length : 'null');
-            console.log('First keypoint sample:', keypoints && keypoints[0] ? keypoints[0] : 'null');
+            if (!keypoints) {
+                console.log('Failed to extract keypoints from MoveNet output');
+                return { detected: false, warning: null };
+            }
         } catch (e) {
             console.log('Error extracting keypoints structure:', e);
             return { detected: false, warning: null };
@@ -2087,21 +2075,7 @@ async function detectBodyInImage(imageSrc) {
         const keypointConfidences = [];
         
         // Ensure we have valid keypoints array BEFORE trying to access it
-        if (!keypoints) {
-            console.log('Keypoints extraction failed - keypoints is null/undefined');
-            console.log('Full keypointsArray for debugging:', JSON.stringify(keypointsArray).substring(0, 500));
-            return { detected: false, warning: null }; // Silent fail
-        }
-        
-        if (!Array.isArray(keypoints)) {
-            console.log('Invalid keypoints format - not an array:', typeof keypoints, keypoints);
-            return { detected: false, warning: null }; // Silent fail
-        }
-        
-        // Check if we have the expected structure
-        if (keypoints.length < 17) {
-            console.log('Invalid keypoints - insufficient length:', keypoints.length);
-            console.log('Keypoints structure:', keypoints);
+        if (!keypoints || !Array.isArray(keypoints) || keypoints.length < 17) {
             return { detected: false, warning: null }; // Silent fail
         }
         
@@ -2126,20 +2100,53 @@ async function detectBodyInImage(imageSrc) {
             }
         }
         
-        console.log('Keypoint confidences:', keypointConfidences);
-        
         // Check if we have enough keypoints with good confidence
-        // Require at least shoulders and hips (key points for body)
-        const importantKeypoints = [keypointConfidences[5], keypointConfidences[6], keypointConfidences[11], keypointConfidences[12]];
-        const detectedKeypoints = importantKeypoints.filter(conf => conf > 0.3).length;
+        // Require shoulders and hips (key points for body) with higher confidence threshold
+        const leftShoulder = keypointConfidences[5];  // index 5
+        const rightShoulder = keypointConfidences[6]; // index 6
+        const leftHip = keypointConfidences[11];      // index 11
+        const rightHip = keypointConfidences[12];     // index 12
         
-        // If we detect at least 2 important keypoints, consider body detected
-        const bodyDetected = detectedKeypoints >= 2;
+        // Also check other important keypoints for better detection
+        const leftKnee = keypointConfidences[13];
+        const rightKnee = keypointConfidences[14];
+        const leftElbow = keypointConfidences[7];
+        const rightElbow = keypointConfidences[8];
         
-        console.log('Body detection result:', {
-            detected: bodyDetected,
-            keypointCount: detectedKeypoints,
-            importantKeypoints: importantKeypoints
+        // Calculate average confidence of all keypoints - if too low, likely no body
+        const avgConfidence = keypointConfidences.reduce((sum, conf) => sum + conf, 0) / keypointConfidences.length;
+        
+        // Stricter detection: require actual body structure
+        // Need both shoulders AND both hips with good confidence (more reliable)
+        const hasBothShoulders = leftShoulder > 0.5 && rightShoulder > 0.5;
+        const hasBothHips = leftHip > 0.5 && rightHip > 0.5;
+        
+        // Alternative: check if we have a reasonable body pose structure
+        // Need at least: (shoulders OR hips) AND (other keypoints) AND (reasonable average confidence)
+        const hasShoulderStructure = hasBothShoulders || (leftShoulder > 0.6 || rightShoulder > 0.6);
+        const hasHipStructure = hasBothHips || (leftHip > 0.6 || rightHip > 0.6);
+        const hasOtherKeypoints = (leftKnee > 0.4 || rightKnee > 0.4) || (leftElbow > 0.4 || rightElbow > 0.4);
+        
+        // Consider body detected if:
+        // - Both shoulders AND both hips detected (strong signal), OR
+        // - (Shoulders OR hips detected) AND (other keypoints detected) AND (average confidence reasonable)
+        const bodyDetected = (hasBothShoulders && hasBothHips) || 
+                            ((hasShoulderStructure || hasHipStructure) && hasOtherKeypoints && avgConfidence > 0.25);
+        
+        const detectedKeypoints = [leftShoulder, rightShoulder, leftHip, rightHip].filter(conf => conf > 0.5).length;
+        
+        console.log('Body detection details:', {
+            leftShoulder,
+            rightShoulder,
+            leftHip,
+            rightHip,
+            avgConfidence,
+            hasBothShoulders,
+            hasBothHips,
+            hasShoulderStructure,
+            hasHipStructure,
+            hasOtherKeypoints,
+            bodyDetected
         });
         
         return {
