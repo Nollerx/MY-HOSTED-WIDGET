@@ -1868,33 +1868,38 @@ let tfLoading = false;
 let movenetModel = null;
 
 async function loadTensorFlow() {
+    // Check if TensorFlow.js is already loaded (possibly by Face-API.js)
+    if (typeof tf !== 'undefined') {
+        tfLoaded = true;
+        return true;
+    }
+    
     if (tfLoaded || tfLoading) return tfLoaded;
     
     tfLoading = true;
     try {
-        // Check if TensorFlow.js is available
-        if (typeof tf === 'undefined') {
-            // Load TensorFlow.js from CDN
-            await new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js';
-                script.onload = () => {
+        // Load TensorFlow.js from CDN only if not already present
+        await new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js';
+            script.onload = () => {
+                // Double-check it loaded
+                if (typeof tf !== 'undefined') {
                     tfLoaded = true;
-                    tfLoading = false;
-                    resolve();
-                };
-                script.onerror = () => {
-                    console.log('TensorFlow.js failed to load');
-                    tfLoading = false;
+                } else {
                     tfLoaded = false;
-                    resolve(); // Don't reject, graceful fallback
-                };
-                document.head.appendChild(script);
-            });
-        } else {
-            tfLoaded = true;
-            tfLoading = false;
-        }
+                }
+                tfLoading = false;
+                resolve();
+            };
+            script.onerror = () => {
+                console.log('TensorFlow.js failed to load');
+                tfLoading = false;
+                tfLoaded = false;
+                resolve(); // Don't reject, graceful fallback
+            };
+            document.head.appendChild(script);
+        });
     } catch (error) {
         console.log('TensorFlow.js initialization failed:', error);
         tfLoading = false;
@@ -1946,19 +1951,25 @@ async function loadMoveNetModel() {
 }
 
 async function detectBodyInImage(imageSrc) {
-    if (!tfLoaded) {
+    // Check if TensorFlow is available (may be loaded by Face-API.js)
+    if (typeof tf === 'undefined') {
         await loadTensorFlow();
+    } else {
+        tfLoaded = true; // Mark as loaded if it's already available
     }
     
-    if (!tfLoaded || typeof tf === 'undefined') {
+    if (typeof tf === 'undefined') {
         return { detected: false, warning: null }; // Silent fail
     }
     
     try {
+        console.log('Loading MoveNet model for body detection...');
         const model = await loadMoveNetModel();
         if (!model) {
+            console.log('MoveNet model not available, skipping body detection');
             return { detected: false, warning: null }; // Silent fail if model not available
         }
+        console.log('MoveNet model loaded successfully');
         
         // Load and preprocess image
         const img = new Image();
@@ -1976,30 +1987,30 @@ async function detectBodyInImage(imageSrc) {
         // Resize image for MoveNet (model expects 192x192 or 256x256)
         const tensor = tf.browser.fromPixels(img);
         const resized = tf.image.resizeBilinear(tensor, [192, 192]);
-        const casted = resized.cast('int32');
-        const expanded = casted.expandDims(0);
+        const expanded = resized.expandDims(0);
+        // Normalize to [-1, 1] range: (pixel / 127.5) - 1
         const normalized = expanded.div(127.5).sub(1);
         
-        // Run inference
+        // Run inference - MoveNet expects input shape [1, 192, 192, 3]
         const predictions = await model.executeAsync(normalized);
         
-        // Extract keypoints
-        const keypoints = await predictions.data();
+        // MoveNet output shape is [1, 17, 3] where 3 is [y, x, confidence]
+        const keypointsArray = await predictions.array();
+        const keypoints = keypointsArray[0]; // Get first (and only) pose
         
         // Clean up tensors
         tensor.dispose();
         resized.dispose();
-        casted.dispose();
         expanded.dispose();
         normalized.dispose();
         predictions.dispose();
         
-        // MoveNet returns 17 keypoints with confidence scores
-        // Important keypoints for body detection: nose, shoulders, hips, knees, ankles
+        // MoveNet returns 17 keypoints with [y, x, confidence] format
+        // Important keypoints for body detection: shoulders, hips
         // Keypoint indices: 0=nose, 5=left shoulder, 6=right shoulder, 11=left hip, 12=right hip
         const keypointConfidences = [];
         for (let i = 0; i < 17; i++) {
-            const confidence = keypoints[i * 3 + 2]; // Each keypoint has [y, x, confidence]
+            const confidence = keypoints[i][2]; // Each keypoint is [y, x, confidence]
             keypointConfidences.push(confidence);
         }
         
@@ -2010,6 +2021,12 @@ async function detectBodyInImage(imageSrc) {
         
         // If we detect at least 2 important keypoints, consider body detected
         const bodyDetected = detectedKeypoints >= 2;
+        
+        console.log('Body detection result:', {
+            detected: bodyDetected,
+            keypointCount: detectedKeypoints,
+            importantKeypoints: importantKeypoints
+        });
         
         return {
             detected: bodyDetected,
