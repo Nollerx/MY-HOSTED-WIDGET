@@ -2048,20 +2048,39 @@ async function detectBodyInImage(imageSrc) {
         const keypointConfidences = [];
         
         // Ensure we have valid keypoints array
-        if (!keypoints || !Array.isArray(keypoints) || keypoints.length < 17) {
-            console.log('Invalid keypoints format:', keypoints);
+        if (!keypoints || !Array.isArray(keypoints)) {
+            console.log('Invalid keypoints format - not an array:', keypoints);
             return { detected: false, warning: null }; // Silent fail
         }
         
+        // Check if we have the expected structure
+        if (keypoints.length < 17) {
+            console.log('Invalid keypoints - insufficient length:', keypoints.length, keypoints);
+            return { detected: false, warning: null }; // Silent fail
+        }
+        
+        // Extract confidences - handle different possible structures
         for (let i = 0; i < 17; i++) {
-            if (keypoints[i] && Array.isArray(keypoints[i]) && keypoints[i].length >= 3) {
-                const confidence = keypoints[i][2]; // Each keypoint is [y, x, confidence]
-                keypointConfidences.push(confidence);
-            } else {
-                // If keypoint format is unexpected, use 0 confidence
+            try {
+                if (keypoints[i] && Array.isArray(keypoints[i]) && keypoints[i].length >= 3) {
+                    // Standard format: [y, x, confidence]
+                    const confidence = keypoints[i][2];
+                    keypointConfidences.push(confidence || 0);
+                } else if (typeof keypoints[i] === 'object' && keypoints[i] !== null) {
+                    // Maybe it's an object format
+                    const confidence = keypoints[i].score || keypoints[i].confidence || 0;
+                    keypointConfidences.push(confidence);
+                } else {
+                    // Unknown format, use 0
+                    keypointConfidences.push(0);
+                }
+            } catch (e) {
+                console.log(`Error extracting keypoint ${i}:`, e, keypoints[i]);
                 keypointConfidences.push(0);
             }
         }
+        
+        console.log('Keypoint confidences:', keypointConfidences);
         
         // Check if we have enough keypoints with good confidence
         // Require at least shoulders and hips (key points for body)
