@@ -1984,15 +1984,17 @@ async function detectBodyInImage(imageSrc) {
             img.onerror = reject;
         });
         
-        // Resize image for MoveNet (model expects 192x192 or 256x256)
+        // Resize image for MoveNet (model expects 192x192)
         const tensor = tf.browser.fromPixels(img);
         const resized = tf.image.resizeBilinear(tensor, [192, 192]);
         const expanded = resized.expandDims(0);
-        // Normalize to [-1, 1] range: (pixel / 127.5) - 1
-        const normalized = expanded.div(127.5).sub(1);
         
-        // Run inference - MoveNet expects input shape [1, 192, 192, 3]
-        const predictions = await model.executeAsync(normalized);
+        // MoveNet expects uint8 [0, 255] range, not normalized
+        // Cast to int32 as the model signature requires
+        const int32Tensor = expanded.cast('int32');
+        
+        // Run inference - MoveNet expects input shape [1, 192, 192, 3] with int32 dtype
+        const predictions = await model.executeAsync(int32Tensor);
         
         // MoveNet output shape is [1, 17, 3] where 3 is [y, x, confidence]
         const keypointsArray = await predictions.array();
@@ -2002,7 +2004,7 @@ async function detectBodyInImage(imageSrc) {
         tensor.dispose();
         resized.dispose();
         expanded.dispose();
-        normalized.dispose();
+        int32Tensor.dispose();
         predictions.dispose();
         
         // MoveNet returns 17 keypoints with [y, x, confidence] format
