@@ -1998,42 +1998,81 @@ async function detectBodyInImage(imageSrc) {
         const predictions = model.execute(int32Tensor);
         
         // MoveNet output shape can vary - get the data
-        const keypointsArray = await predictions.array();
+        // First, check the tensor shape to understand the structure
+        const outputShape = predictions.shape;
+        console.log('MoveNet output tensor shape:', outputShape);
         
-        console.log('MoveNet output shape:', predictions.shape);
-        console.log('MoveNet output array structure:', keypointsArray);
+        // Get the raw array data
+        let keypointsArray;
+        try {
+            keypointsArray = await predictions.array();
+            console.log('MoveNet output array type:', typeof keypointsArray);
+            console.log('MoveNet output array isArray:', Array.isArray(keypointsArray));
+            console.log('MoveNet output array length:', Array.isArray(keypointsArray) ? keypointsArray.length : 'N/A');
+        } catch (e) {
+            console.log('Error getting array from predictions:', e);
+            return { detected: false, warning: null };
+        }
+        
+        console.log('MoveNet output array structure (first level):', keypointsArray);
         
         // Handle different output shapes - flatten to get the keypoints
-        let keypoints;
+        let keypoints = null;
         
-        // MoveNet can return different shapes depending on the model version
-        // Try to extract the [17, 3] array from various nested structures
-        if (Array.isArray(keypointsArray)) {
-            // Flatten nested arrays until we find the keypoints structure
-            let current = keypointsArray;
-            while (Array.isArray(current) && current.length === 1 && Array.isArray(current[0])) {
-                current = current[0];
+        try {
+            // MoveNet can return different shapes depending on the model version
+            // Common formats: [1, 17, 3], [1, 1, 17, 3], or [17, 3]
+            if (!Array.isArray(keypointsArray)) {
+                console.log('Output is not an array, type:', typeof keypointsArray);
+                return { detected: false, warning: null };
             }
             
-            // Now current should be [17, 3] or similar
-            if (Array.isArray(current) && current.length >= 17) {
-                keypoints = current;
-            } else {
-                console.log('Unexpected keypoints structure, trying alternative extraction');
-                // Try accessing directly based on common shapes
-                if (Array.isArray(keypointsArray[0]) && Array.isArray(keypointsArray[0][0])) {
-                    keypoints = keypointsArray[0][0];
-                } else if (Array.isArray(keypointsArray[0])) {
-                    keypoints = keypointsArray[0];
+            // Deep flatten to find the actual keypoints array [17, 3]
+            let current = keypointsArray;
+            let depth = 0;
+            const maxDepth = 5;
+            
+            while (depth < maxDepth && Array.isArray(current)) {
+                if (current.length === 17 && Array.isArray(current[0]) && current[0].length >= 3) {
+                    // Found it! This is [17, 3]
+                    keypoints = current;
+                    break;
+                } else if (current.length === 1 && Array.isArray(current[0])) {
+                    // Unwrap one level
+                    current = current[0];
+                    depth++;
+                } else if (current.length > 0 && Array.isArray(current[0]) && Array.isArray(current[0][0])) {
+                    // Multi-level nested, try first element
+                    current = current[0];
+                    depth++;
                 } else {
+                    // Unknown structure, try to use as-is if it has 17 elements
+                    if (current.length >= 17) {
+                        keypoints = current;
+                    }
+                    break;
+                }
+            }
+            
+            if (!keypoints) {
+                // Fallback: try common access patterns
+                console.log('Trying fallback extraction methods...');
+                if (keypointsArray[0]?.[0]?.length === 3 && keypointsArray[0][0].length >= 17) {
+                    keypoints = keypointsArray[0][0];
+                } else if (keypointsArray[0]?.length >= 17) {
+                    keypoints = keypointsArray[0];
+                } else if (keypointsArray.length >= 17) {
                     keypoints = keypointsArray;
                 }
             }
-        } else {
-            keypoints = keypointsArray;
+            
+            console.log('Extracted keypoints:', keypoints);
+            console.log('Keypoints length:', keypoints ? keypoints.length : 'null');
+            console.log('First keypoint sample:', keypoints && keypoints[0] ? keypoints[0] : 'null');
+        } catch (e) {
+            console.log('Error extracting keypoints structure:', e);
+            return { detected: false, warning: null };
         }
-        
-        console.log('Extracted keypoints:', keypoints);
         
         // Clean up tensors
         tensor.dispose();
@@ -2047,15 +2086,22 @@ async function detectBodyInImage(imageSrc) {
         // Keypoint indices: 0=nose, 5=left shoulder, 6=right shoulder, 11=left hip, 12=right hip
         const keypointConfidences = [];
         
-        // Ensure we have valid keypoints array
-        if (!keypoints || !Array.isArray(keypoints)) {
-            console.log('Invalid keypoints format - not an array:', keypoints);
+        // Ensure we have valid keypoints array BEFORE trying to access it
+        if (!keypoints) {
+            console.log('Keypoints extraction failed - keypoints is null/undefined');
+            console.log('Full keypointsArray for debugging:', JSON.stringify(keypointsArray).substring(0, 500));
+            return { detected: false, warning: null }; // Silent fail
+        }
+        
+        if (!Array.isArray(keypoints)) {
+            console.log('Invalid keypoints format - not an array:', typeof keypoints, keypoints);
             return { detected: false, warning: null }; // Silent fail
         }
         
         // Check if we have the expected structure
         if (keypoints.length < 17) {
-            console.log('Invalid keypoints - insufficient length:', keypoints.length, keypoints);
+            console.log('Invalid keypoints - insufficient length:', keypoints.length);
+            console.log('Keypoints structure:', keypoints);
             return { detected: false, warning: null }; // Silent fail
         }
         
