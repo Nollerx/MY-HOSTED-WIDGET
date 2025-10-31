@@ -2543,6 +2543,205 @@ body {
     border: 1px solid #e0e0e0;
 }
 
+/* Best Practices Modal */
+.best-practices-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 20000;
+}
+
+.best-practices-modal.active {
+    display: flex;
+}
+
+.best-practices-content {
+    background: #ffffff;
+    width: 90vw;
+    max-width: 600px;
+    max-height: 85vh;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 25px 80px rgba(0,0,0,0.3);
+    border: 1px solid #e0e0e0;
+}
+
+.best-practices-header {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: #ffffff;
+    padding: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+}
+
+.best-practices-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.best-practices-close {
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #ffffff;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 4px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.2s ease;
+}
+
+.best-practices-close:hover {
+    background: rgba(255,255,255,0.3);
+}
+
+.best-practices-body {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.best-practices-tip {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #6366f1;
+}
+
+.best-practices-tip:last-child {
+    margin-bottom: 0;
+}
+
+.tip-icon {
+    font-size: 32px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.tip-content h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 6px 0;
+    color: #333;
+}
+
+.tip-content p {
+    font-size: 14px;
+    margin: 0;
+    color: #666;
+    line-height: 1.5;
+}
+
+.best-practices-footer {
+    padding: 20px 24px;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    background: #f8f9fa;
+}
+
+.dont-show-again-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #666;
+    user-select: none;
+}
+
+.dont-show-again-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #6366f1;
+}
+
+.best-practices-got-it {
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    white-space: nowrap;
+}
+
+.best-practices-got-it:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+@media (max-width: 768px) {
+    .best-practices-content {
+        width: 95vw;
+        max-height: 90vh;
+    }
+
+    .best-practices-header {
+        padding: 20px;
+    }
+
+    .best-practices-title {
+        font-size: 18px;
+    }
+
+    .best-practices-body {
+        padding: 20px;
+    }
+
+    .best-practices-tip {
+        padding: 12px;
+        gap: 12px;
+    }
+
+    .tip-icon {
+        font-size: 28px;
+    }
+
+    .tip-content h3 {
+        font-size: 15px;
+    }
+
+    .tip-content p {
+        font-size: 13px;
+    }
+
+    .best-practices-footer {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+        padding: 16px 20px;
+    }
+
+    .best-practices-got-it {
+        width: 100%;
+    }
+}
+
 .browser-header {
     background: linear-gradient(135deg, #f8f8f8 0%, #f0f0f0 50%, #e8e8e8 100%);
     color: #333;
@@ -3778,6 +3977,63 @@ body {
         <div class="modal-content">
             <button class="modal-close" onclick="closeImageModal()">&times;</button>
             <img id="modalImage" class="modal-image" src="" alt="Virtual Try-On Result">
+        </div>
+    </div>
+
+    <!-- Best Practices Modal -->
+    <div id="bestPracticesBackdrop" class="modal-backdrop" onclick="closeBestPracticesModal()"></div>
+    <div id="bestPracticesModal" class="best-practices-modal">
+        <div class="best-practices-content">
+            <div class="best-practices-header">
+                <h2 class="best-practices-title">📸 Photo Tips for Best Results</h2>
+                <button class="best-practices-close" onclick="closeBestPracticesModal()">&times;</button>
+            </div>
+            <div class="best-practices-body">
+                <div class="best-practices-tip">
+                    <div class="tip-icon">💡</div>
+                    <div class="tip-content">
+                        <h3>Lighting</h3>
+                        <p>Use good natural or even lighting. Avoid harsh shadows or overly bright spots.</p>
+                    </div>
+                </div>
+                <div class="best-practices-tip">
+                    <div class="tip-icon">🧍</div>
+                    <div class="tip-content">
+                        <h3>Photo Type</h3>
+                        <p>Stand straight with a full body view. Portrait orientation works best.</p>
+                    </div>
+                </div>
+                <div class="best-practices-tip">
+                    <div class="tip-icon">🎨</div>
+                    <div class="tip-content">
+                        <h3>Background</h3>
+                        <p>A plain, simple background helps the virtual try-on work better.</p>
+                    </div>
+                </div>
+                <div class="best-practices-tip">
+                    <div class="tip-icon">👕</div>
+                    <div class="tip-content">
+                        <h3>Clothing</h3>
+                        <p>Minimal existing clothing allows for better try-on results.</p>
+                    </div>
+                </div>
+                <div class="best-practices-tip">
+                    <div class="tip-icon">📱</div>
+                    <div class="tip-content">
+                        <h3>Resolution</h3>
+                        <p>Use a clear, high-quality photo for the best virtual try-on experience.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="best-practices-footer">
+                <label class="dont-show-again-label">
+                    <input type="checkbox" id="dontShowAgainCheckbox">
+                    <span>Don't show this again</span>
+                </label>
+                <button class="best-practices-got-it btn btn-primary" onclick="handleBestPracticesDismiss()">
+                    Got it!
+                </button>
+            </div>
         </div>
     </div>
 
