@@ -7,6 +7,70 @@ window.initializeWidget = function() {
     tryonChatHistory = [];  // Initialize as array instead of undefined
     generalChatHistory = []; // Initialize as array instead of undefined
     
+    // If store config not loaded yet (e.g., direct HTML load without loader), fetch it
+    if (!window.ELLO_STORE_CONFIG) {
+        const storeId = window.ELLO_STORE_ID || 'default_store';
+        console.log('🔄 Store config not found, fetching for store:', storeId);
+        
+        fetch(`https://rwmvgwnebnsqcyhhurti.supabase.co/rest/v1/stores?store_id=eq.${storeId}`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.json();
+            } else {
+                throw new Error('HTTP error! status: ' + response.status);
+            }
+        })
+        .then(data => {
+            console.log('🗄️ Raw store data from Supabase (direct fetch):', data);
+            if (data && data.length > 0) {
+                var storeConfig = data[0];
+                console.log('🗄️ Individual store config:', storeConfig);
+                console.log('🎨 minimized_color from DB:', storeConfig.minimized_color);
+                window.ELLO_STORE_CONFIG = {
+                    storeId: storeConfig.store_id,
+                    storeName: window.ELLO_STORE_NAME || 'default-name',
+                    clothingPopulationType: storeConfig.clothing_population_type || 'supabase',
+                    planName: storeConfig.plan_name,
+                    minimizedColor: storeConfig.minimized_color || null
+                };
+                console.log('✅ Store configuration loaded (direct fetch):', window.ELLO_STORE_CONFIG);
+                console.log('🎨 Minimized color in config:', window.ELLO_STORE_CONFIG.minimizedColor);
+                
+                // Now apply the color
+                applyMinimizedWidgetColor();
+            } else {
+                console.warn('⚠️ Store not found, using default config');
+                window.ELLO_STORE_CONFIG = {
+                    storeId: storeId,
+                    storeName: window.ELLO_STORE_NAME || 'default-name',
+                    clothingPopulationType: 'supabase',
+                    planName: 'STARTER',
+                    minimizedColor: null
+                };
+                applyMinimizedWidgetColor();
+            }
+        })
+        .catch(error => {
+            console.error('❌ Error fetching store configuration:', error);
+            window.ELLO_STORE_CONFIG = {
+                storeId: storeId,
+                storeName: window.ELLO_STORE_NAME || 'default-name',
+                clothingPopulationType: 'supabase',
+                planName: 'STARTER',
+                minimizedColor: null
+            };
+            applyMinimizedWidgetColor();
+        });
+    } else {
+        console.log('✅ Store config already loaded');
+    }
+    
     // Load clothing data from Shopify
     loadClothingData().then(() => {
         console.log('Initial clothing data load complete');
@@ -16,6 +80,26 @@ window.initializeWidget = function() {
     
     // Apply theme
     applyWidgetTheme();
+    
+    // Apply minimized widget color
+    // Wait a bit for store config to be available if it's still loading
+    // Retry up to 3 times with increasing delays
+    let retryCount = 0;
+    const tryApplyColor = () => {
+        if (window.ELLO_STORE_CONFIG) {
+            console.log('🎨 Store config ready, applying color...');
+            applyMinimizedWidgetColor();
+        } else if (retryCount < 3) {
+            retryCount++;
+            const delay = retryCount * 500; // 500ms, 1000ms, 1500ms
+            console.log(`⏳ Store config not ready, retrying in ${delay}ms... (${retryCount}/3)`);
+            setTimeout(tryApplyColor, delay);
+        } else {
+            console.warn('⚠️ Store config not available after retries, using default color');
+            applyMinimizedWidgetColor(); // Still try (will use default)
+        }
+    };
+    tryApplyColor();
     
     const widget = document.getElementById('virtualTryonWidget');
     if (widget) {
@@ -47,8 +131,21 @@ window.initializeWidget = function() {
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', window.initializeWidget);
 } else {
-    // Don't auto-initialize here since the loader will call it
-    console.log('Document already loaded, waiting for manual initialization');
+    // If document already loaded and no store ID set, set default for testing
+    if (!window.ELLO_STORE_ID) {
+        window.ELLO_STORE_ID = 'default_store';
+        window.ELLO_STORE_NAME = 'default-name';
+        console.log('🧪 Using test store ID: default_store');
+    }
+    
+    // If loading directly (not via loader), initialize immediately
+    // Check if we're in a direct HTML load by looking for the widget container
+    setTimeout(() => {
+        if (document.getElementById('virtualTryonWidget') && !window.ELLO_STORE_CONFIG) {
+            console.log('📄 Direct HTML load detected, initializing widget...');
+            window.initializeWidget();
+        }
+    }, 100);
 }
 // Configuration
 const WEBHOOK_URL = 'https://ancesoftware.app.n8n.cloud/webhook/virtual-tryon-production';
@@ -327,6 +424,133 @@ function hasClothingContext(product) {
 // Dynamic clothing data from Supabase
 let sampleClothing = [];
 
+// Generate comprehensive mock clothing data for testing
+function getMockClothingData() {
+    return [
+        {
+            id: 'mock-shirt-white',
+            name: 'Classic White Button-Down Shirt',
+            price: 49.99,
+            category: 'shirt',
+            color: 'white',
+            image_url: 'https://images.unsplash.com/photo-1603252109303-2751441dd157?w=300&h=400&fit=crop',
+            product_url: '#',
+            data_source: 'mock',
+            variants: [
+                { id: 'v1', title: 'Small', price: 49.99, available: true, size: 'S' },
+                { id: 'v2', title: 'Medium', price: 49.99, available: true, size: 'M' },
+                { id: 'v3', title: 'Large', price: 49.99, available: true, size: 'L' },
+                { id: 'v4', title: 'X-Large', price: 49.99, available: true, size: 'XL' }
+            ]
+        },
+        {
+            id: 'mock-dress-floral',
+            name: 'Summer Floral Midi Dress',
+            price: 79.99,
+            category: 'dress',
+            color: 'multicolor',
+            image_url: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=300&h=400&fit=crop',
+            product_url: '#',
+            data_source: 'mock',
+            variants: [
+                { id: 'v5', title: 'Small', price: 79.99, available: true, size: 'S' },
+                { id: 'v6', title: 'Medium', price: 79.99, available: true, size: 'M' },
+                { id: 'v7', title: 'Large', price: 79.99, available: true, size: 'L' }
+            ]
+        },
+        {
+            id: 'mock-jacket-denim',
+            name: 'Classic Blue Denim Jacket',
+            price: 89.99,
+            category: 'jacket',
+            color: 'blue',
+            image_url: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=300&h=400&fit=crop',
+            product_url: '#',
+            data_source: 'mock',
+            variants: [
+                { id: 'v8', title: 'Small', price: 89.99, available: true, size: 'S' },
+                { id: 'v9', title: 'Medium', price: 89.99, available: true, size: 'M' },
+                { id: 'v10', title: 'Large', price: 89.99, available: true, size: 'L' }
+            ]
+        },
+        {
+            id: 'mock-sweater-gray',
+            name: 'Cozy Gray Cable Knit Sweater',
+            price: 69.99,
+            category: 'sweater',
+            color: 'gray',
+            image_url: 'https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=300&h=400&fit=crop',
+            product_url: '#',
+            data_source: 'mock',
+            variants: [
+                { id: 'v11', title: 'Small', price: 69.99, available: true, size: 'S' },
+                { id: 'v12', title: 'Medium', price: 69.99, available: true, size: 'M' },
+                { id: 'v13', title: 'Large', price: 69.99, available: true, size: 'L' }
+            ]
+        },
+        {
+            id: 'mock-jeans-dark',
+            name: 'Dark Wash Slim Fit Jeans',
+            price: 59.99,
+            category: 'pants',
+            color: 'blue',
+            image_url: 'https://images.unsplash.com/photo-1542272604-787c3835535d?w=300&h=400&fit=crop',
+            product_url: '#',
+            data_source: 'mock',
+            variants: [
+                { id: 'v14', title: '28x30', price: 59.99, available: true, size: '28' },
+                { id: 'v15', title: '30x32', price: 59.99, available: true, size: '30' },
+                { id: 'v16', title: '32x32', price: 59.99, available: true, size: '32' }
+            ]
+        },
+        {
+            id: 'mock-blazer-navy',
+            name: 'Navy Blazer',
+            price: 129.99,
+            category: 'blazer',
+            color: 'navy',
+            image_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&h=400&fit=crop',
+            product_url: '#',
+            data_source: 'mock',
+            variants: [
+                { id: 'v17', title: 'Small', price: 129.99, available: true, size: 'S' },
+                { id: 'v18', title: 'Medium', price: 129.99, available: true, size: 'M' },
+                { id: 'v19', title: 'Large', price: 129.99, available: true, size: 'L' }
+            ]
+        },
+        {
+            id: 'mock-tshirt-black',
+            name: 'Black Cotton T-Shirt',
+            price: 29.99,
+            category: 't-shirt',
+            color: 'black',
+            image_url: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=300&h=400&fit=crop',
+            product_url: '#',
+            data_source: 'mock',
+            variants: [
+                { id: 'v20', title: 'Small', price: 29.99, available: true, size: 'S' },
+                { id: 'v21', title: 'Medium', price: 29.99, available: true, size: 'M' },
+                { id: 'v22', title: 'Large', price: 29.99, available: true, size: 'L' }
+            ]
+        },
+        {
+            id: 'mock-hoodie-red',
+            name: 'Red Zip-Up Hoodie',
+            price: 64.99,
+            category: 'hoodie',
+            color: 'red',
+            image_url: 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?w=300&h=400&fit=crop',
+            product_url: '#',
+            data_source: 'mock',
+            variants: [
+                { id: 'v23', title: 'Small', price: 64.99, available: true, size: 'S' },
+                { id: 'v24', title: 'Medium', price: 64.99, available: true, size: 'M' },
+                { id: 'v25', title: 'Large', price: 64.99, available: true, size: 'L' }
+            ]
+        }
+    ];
+}
+
 // Load clothing data from active_clothing_items view
 // Load clothing data based on store configuration
 async function loadClothingData() {
@@ -363,6 +587,13 @@ async function loadClothingData() {
             await loadClothingFromShopify(storeConfig);
         }
         
+        // If no clothing items were loaded, use mock data for testing
+        if (!sampleClothing || sampleClothing.length === 0) {
+            console.log('⚠️ No clothing items found. Using mock data for testing...');
+            sampleClothing = getMockClothingData();
+            console.log('✅ Loaded', sampleClothing.length, 'mock clothing items for testing');
+        }
+        
         // Refresh UI if widget is open
         if (widgetOpen && currentMode === 'tryon') {
             await populateFeaturedAndQuickPicks();
@@ -376,45 +607,9 @@ async function loadClothingData() {
             showSuccessNotification('Connection Error', 'Unable to load products. Using demo data.', 5000);
         }
         
-        // Use comprehensive demo data
-        sampleClothing = [
-            {
-                id: 'demo-shirt-1',
-                name: 'Classic White Shirt',
-                price: 49.99,
-                category: 'shirt',
-                color: 'white',
-                image_url: 'https://via.placeholder.com/300x400/ffffff/333333?text=White+Shirt',
-                product_url: '#',
-                variants: [{ id: '1', title: 'Small', price: 49.99, available: true, size: 'S' },
-                          { id: '2', title: 'Medium', price: 49.99, available: true, size: 'M' },
-                          { id: '3', title: 'Large', price: 49.99, available: true, size: 'L' }]
-            },
-            {
-                id: 'demo-dress-1',
-                name: 'Summer Floral Dress',
-                price: 79.99,
-                category: 'dress',
-                color: 'multicolor',
-                image_url: 'https://via.placeholder.com/300x400/ffcccc/333333?text=Floral+Dress',
-                product_url: '#',
-                variants: [{ id: '4', title: 'Small', price: 79.99, available: true, size: 'S' },
-                          { id: '5', title: 'Medium', price: 79.99, available: true, size: 'M' }]
-            },
-            {
-                id: 'demo-jacket-1',
-                name: 'Denim Jacket',
-                price: 89.99,
-                category: 'jacket',
-                color: 'blue',
-                image_url: 'https://via.placeholder.com/300x400/4169e1/ffffff?text=Denim+Jacket',
-                product_url: '#',
-                variants: [{ id: '6', title: 'Medium', price: 89.99, available: true, size: 'M' },
-                          { id: '7', title: 'Large', price: 89.99, available: true, size: 'L' }]
-            }
-        ];
-        
-        console.log('Using demo data with', sampleClothing.length, 'items');
+        // Use mock data for testing
+        sampleClothing = getMockClothingData();
+        console.log('✅ Using mock data with', sampleClothing.length, 'items for testing');
     }
 }
 
@@ -597,8 +792,12 @@ async function loadClothingFromShopify(storeConfig) {
         allProducts = uniqueProducts;
     }
     
+    // If no products found, use mock data instead of throwing error
     if (allProducts.length === 0) {
-        throw new Error('No products found in Shopify store');
+        console.log('⚠️ No products found in Shopify store. Using mock data for testing...');
+        sampleClothing = getMockClothingData();
+        console.log('✅ Loaded', sampleClothing.length, 'mock clothing items for testing');
+        return; // Exit early with mock data
     }
 
     // Convert Shopify products to widget format
@@ -637,6 +836,13 @@ async function loadClothingFromShopify(storeConfig) {
     console.log(`✅ Loaded ${allProducts.length} total products from Shopify`);
     console.log(`✅ Converted ${convertedProducts.length} products`);
     console.log(`✅ Filtered to ${sampleClothing.length} clothing items`);
+    
+    // If no clothing items found, use mock data for testing
+    if (sampleClothing.length === 0) {
+        console.log('⚠️ No clothing items found in Shopify. Using mock data for testing...');
+        sampleClothing = getMockClothingData();
+        console.log('✅ Loaded', sampleClothing.length, 'mock clothing items for testing');
+    }
 }
 
 // Load clothing from Supabase
@@ -719,10 +925,21 @@ async function loadClothingFromSupabase(storeConfig) {
         console.log(`✅ Loaded ${allProducts.length} total products from Supabase`);
         console.log(`✅ Filtered to ${sampleClothing.length} clothing items`);
         console.log('✅ Final sampleClothing:', sampleClothing);
+        
+        // If no items found, use mock data for testing
+        if (sampleClothing.length === 0) {
+            console.log('⚠️ No clothing items found in Supabase. Using mock data for testing...');
+            sampleClothing = getMockClothingData();
+            console.log('✅ Loaded', sampleClothing.length, 'mock clothing items for testing');
+        }
 
     } catch (error) {
         console.error('❌ Error loading from Supabase:', error);
-        throw error;
+        // On error, also use mock data
+        console.log('⚠️ Error occurred. Using mock data for testing...');
+        sampleClothing = getMockClothingData();
+        console.log('✅ Loaded', sampleClothing.length, 'mock clothing items for testing');
+        // Don't throw - allow widget to continue with mock data
     }
 }
 
@@ -1084,6 +1301,32 @@ function handleBestPracticesDismiss() {
     }
 }
 
+function handleBestPracticesUpload() {
+    const dontShowAgain = document.getElementById('dontShowAgainCheckbox');
+    dismissBestPractices(dontShowAgain?.checked || false);
+    
+    // Close the modal
+    closeBestPracticesModal(true);
+    
+    // Trigger photo upload after a short delay to allow modal to close
+    setTimeout(() => {
+        if (isMobile) {
+            // On mobile, show camera controls or let user choose
+            // The camera controls should already be visible if needed
+            const cameraControls = document.getElementById('cameraControls');
+            if (cameraControls) {
+                cameraControls.style.display = 'flex';
+            }
+        } else {
+            // On desktop, trigger file input click
+            const photoInput = document.getElementById('photoInput');
+            if (photoInput) {
+                photoInput.click();
+            }
+        }
+    }, 300);
+}
+
 function handlePhotoUploadClick() {
     // Show best practices modal if not dismissed
     if (checkShouldShowBestPractices()) {
@@ -1131,6 +1374,10 @@ setTimeout(() => {
         selectedClothing = currentProduct.id;
         const featuredContainer = document.getElementById('featuredItem');
         featuredContainer.classList.add('selected');
+        
+        // Don't show preview - auto-selected product is visible in featured section
+        updateSelectedClothingPreview(null);
+        
         updateTryOnButton();
         console.log('🎯 Auto-selected current product:', currentProduct.name);
     }
@@ -1161,6 +1408,16 @@ function closeWidget() {
     widget.classList.add('widget-minimized');
     widgetOpen = false;
     currentMode = 'tryon';
+    
+    // Apply minimized widget color (check if gradient was already set)
+    const savedGradient = widget.getAttribute('data-minimized-gradient');
+    if (savedGradient) {
+        widget.style.background = savedGradient;
+        console.log('✅ Restored saved gradient on minimize:', savedGradient);
+    } else {
+        // Apply color if not already set
+        applyMinimizedWidgetColor();
+    }
     
     // Reset body overflow
     document.body.style.overflow = '';
@@ -1343,6 +1600,59 @@ function selectFeaturedClothing() {
     // Highlight featured item
     const featuredContainer = document.getElementById('featuredItem');
     featuredContainer.classList.add('selected');
+    
+    // Don't show preview - item is already visible in featured section
+    updateSelectedClothingPreview(null);
+    
+    updateTryOnButton();
+}
+
+function updateSelectedClothingPreview(clothingId) {
+    const preview = document.getElementById('selectedClothingPreview');
+    const previewImage = document.getElementById('selectedClothingImage');
+    
+    if (!clothingId) {
+        // Hide preview if no clothing selected
+        if (preview) {
+            preview.style.display = 'none';
+        }
+        return;
+    }
+    
+    // Find clothing in sampleClothing array
+    const clothing = sampleClothing.find(item => item.id === clothingId);
+    
+    if (!clothing) {
+        console.warn('Clothing not found for preview:', clothingId);
+        if (preview) {
+            preview.style.display = 'none';
+        }
+        return;
+    }
+    
+    // Update preview with clothing data
+    if (previewImage && clothing.image_url) {
+        previewImage.src = clothing.image_url;
+        previewImage.alt = clothing.name || 'Selected clothing';
+    }
+    
+    // Show preview
+    if (preview) {
+        preview.style.display = 'block';
+    }
+}
+
+function clearSelectedClothing() {
+    selectedClothing = null;
+    
+    // Clear preview
+    updateSelectedClothingPreview(null);
+    
+    // Clear all visual selections
+    document.querySelectorAll('.featured-item, .quick-pick-item, .browser-clothing-card').forEach(item => {
+        item.classList.remove('selected');
+    });
+    
     updateTryOnButton();
 }
 
@@ -1361,6 +1671,9 @@ function selectClothing(clothingId) {
     // Highlight selected item
     event.target.closest('.quick-pick-item').classList.add('selected');
     
+    // Don't show preview - item is already visible in quick picks
+    updateSelectedClothingPreview(null);
+    
     updateTryOnButton();
 }
 
@@ -1376,6 +1689,9 @@ function resetSelection() {
     document.querySelectorAll('.featured-item, .quick-pick-item').forEach(item => {
         item.classList.remove('selected');
     });
+    
+    // Clear preview
+    updateSelectedClothingPreview(null);
     
     // Reset photo preview
     const preview = document.getElementById('photoPreview');
@@ -1959,13 +2275,15 @@ async function detectBodyInImage(imageSrc) {
     }
     
     if (typeof tf === 'undefined') {
-        return { detected: false, warning: null }; // Silent fail
+        // Silent fail - don't block upload if TensorFlow isn't available
+        return { detected: false, state: null, warning: null, message: null };
     }
     
     try {
         const model = await loadMoveNetModel();
         if (!model) {
-            return { detected: false, warning: null }; // Silent fail if model not available
+            // Silent fail - don't block upload if model can't load
+            return { detected: false, state: null, warning: null, message: null };
         }
         
         // Load and preprocess image
@@ -2076,7 +2394,8 @@ async function detectBodyInImage(imageSrc) {
         
         // Ensure we have valid keypoints array BEFORE trying to access it
         if (!keypoints || !Array.isArray(keypoints) || keypoints.length < 17) {
-            return { detected: false, warning: null }; // Silent fail
+            // Silent fail - don't block upload if we can't analyze
+            return { detected: false, state: null, warning: null, message: null };
         }
         
         // Extract confidences - handle different possible structures
@@ -2100,38 +2419,55 @@ async function detectBodyInImage(imageSrc) {
             }
         }
         
-        // Check if we have enough keypoints with good confidence
-        // Require shoulders and hips (key points for body) with higher confidence threshold
+        // Configuration: Confidence thresholds
+        const SHOULDER_CONFIDENCE_THRESHOLD = 0.5;
+        const HIP_CONFIDENCE_THRESHOLD = 0.5;
+        const REJECT_AVG_CONFIDENCE_THRESHOLD = 0.2;
+        
+        // Extract key body keypoints
         const leftShoulder = keypointConfidences[5];  // index 5
         const rightShoulder = keypointConfidences[6]; // index 6
         const leftHip = keypointConfidences[11];      // index 11
         const rightHip = keypointConfidences[12];     // index 12
         
-        // Also check other important keypoints for better detection
-        const leftKnee = keypointConfidences[13];
-        const rightKnee = keypointConfidences[14];
-        const leftElbow = keypointConfidences[7];
-        const rightElbow = keypointConfidences[8];
-        
         // Calculate average confidence of all keypoints - if too low, likely no body
         const avgConfidence = keypointConfidences.reduce((sum, conf) => sum + conf, 0) / keypointConfidences.length;
         
-        // Stricter detection: require actual body structure
-        // Need both shoulders AND both hips with good confidence (more reliable)
-        const hasBothShoulders = leftShoulder > 0.5 && rightShoulder > 0.5;
-        const hasBothHips = leftHip > 0.5 && rightHip > 0.5;
+        // Check for body structure detection
+        const hasBothShoulders = leftShoulder > SHOULDER_CONFIDENCE_THRESHOLD && rightShoulder > SHOULDER_CONFIDENCE_THRESHOLD;
+        const hasBothHips = leftHip > HIP_CONFIDENCE_THRESHOLD && rightHip > HIP_CONFIDENCE_THRESHOLD;
+        const hasAnyShoulder = leftShoulder > SHOULDER_CONFIDENCE_THRESHOLD || rightShoulder > SHOULDER_CONFIDENCE_THRESHOLD;
+        const hasAnyHip = leftHip > HIP_CONFIDENCE_THRESHOLD || rightHip > HIP_CONFIDENCE_THRESHOLD;
         
-        // Alternative: check if we have a reasonable body pose structure
-        // Need at least: (shoulders OR hips) AND (other keypoints) AND (reasonable average confidence)
-        const hasShoulderStructure = hasBothShoulders || (leftShoulder > 0.6 || rightShoulder > 0.6);
-        const hasHipStructure = hasBothHips || (leftHip > 0.6 || rightHip > 0.6);
-        const hasOtherKeypoints = (leftKnee > 0.4 || rightKnee > 0.4) || (leftElbow > 0.4 || rightElbow > 0.4);
+        // Three-tier detection system:
+        // 1. REJECT: No body detected (no shoulders AND no hips, or very low average confidence)
+        // 2. WARNING: Partial body (shoulders OR hips, but not both)
+        // 3. SUCCESS: Full body (both shoulders AND hips detected)
         
-        // Consider body detected if:
-        // - Both shoulders AND both hips detected (strong signal), OR
-        // - (Shoulders OR hips detected) AND (other keypoints detected) AND (average confidence reasonable)
-        const bodyDetected = (hasBothShoulders && hasBothHips) || 
-                            ((hasShoulderStructure || hasHipStructure) && hasOtherKeypoints && avgConfidence > 0.25);
+        let state, message, detected;
+        
+        if ((!hasAnyShoulder && !hasAnyHip) || avgConfidence < REJECT_AVG_CONFIDENCE_THRESHOLD) {
+            // REJECT: No body detected
+            state = 'reject';
+            detected = false;
+            message = 'No body detected in photo. Please upload a full-body photo with you standing clearly visible.';
+        } else if (hasBothShoulders && hasBothHips) {
+            // SUCCESS: Full body detected
+            state = 'success';
+            detected = true;
+            message = null; // No message needed for success
+        } else {
+            // WARNING: Partial body (shoulders OR hips, but not both)
+            state = 'warning';
+            detected = true; // Still allow upload, just warn
+            if (hasAnyShoulder && !hasAnyHip) {
+                message = 'Only upper body detected. For best try-on results, include your full body (shoulders to hips) in the photo.';
+            } else if (hasAnyHip && !hasAnyShoulder) {
+                message = 'Only lower body detected. For best try-on results, include your full body (shoulders to hips) in the photo.';
+            } else {
+                message = 'Partial body detected. For best try-on results, use a full-body photo with both your shoulders and hips clearly visible.';
+            }
+        }
         
         const detectedKeypoints = [leftShoulder, rightShoulder, leftHip, rightHip].filter(conf => conf > 0.5).length;
         
@@ -2143,20 +2479,21 @@ async function detectBodyInImage(imageSrc) {
             avgConfidence,
             hasBothShoulders,
             hasBothHips,
-            hasShoulderStructure,
-            hasHipStructure,
-            hasOtherKeypoints,
-            bodyDetected
+            state,
+            detected
         });
         
         return {
-            detected: bodyDetected,
+            detected: detected,
+            state: state,
             keypointCount: detectedKeypoints,
-            warning: !bodyDetected ? 'No body detected. For best try-on results, use a full-body photo with you standing straight and clearly visible.' : null
+            message: message,
+            warning: state === 'warning' ? message : (state === 'reject' ? message : null)
         };
     } catch (error) {
         console.log('Body detection error:', error);
-        return { detected: false, warning: null }; // Silent fail
+        // On error, don't block - gracefully fail (silent fail)
+        return { detected: false, state: null, warning: null, message: null };
     }
 }
 
@@ -2207,13 +2544,13 @@ async function validateImageQuality(imageSrc) {
         errors.push(`Image resolution is too low. Please use an image at least ${MIN_RESOLUTION}x${MIN_RESOLUTION} pixels.`);
     }
     
-    // Check aspect ratio (portrait orientation)
+    // Check aspect ratio (portrait orientation) - warning only, not blocking
     if (!analysis.isPortrait) {
-        errors.push('Please use a portrait orientation image (height should be greater than width).');
+        warnings.push('Portrait orientation is recommended for best try-on results. Landscape photos may not work as well.');
     } else {
         // Check width/height ratio (should be between 0.5 and 0.8)
         if (analysis.widthHeightRatio < 0.5 || analysis.widthHeightRatio > 0.8) {
-            errors.push('Image aspect ratio is not ideal. Please use a full-body portrait photo.');
+            warnings.push('Image aspect ratio is not ideal. For best results, use a full-body portrait photo.');
         }
     }
     
@@ -2239,11 +2576,21 @@ async function validateImageQuality(imageSrc) {
         warnings.push(faceResult.warning);
     }
     
-    // Body detection (non-blocking, warning only)
+    // Body detection with three-tier system: reject, warning, or success
     const bodyResult = await detectBodyInImage(imageSrc);
-    if (bodyResult.warning && !bodyResult.detected) {
-        warnings.push(bodyResult.warning);
+    
+    // Handle body detection states (only act if state is not null - null means silent fail)
+    if (bodyResult && bodyResult.state) {
+        if (bodyResult.state === 'reject') {
+            // REJECT: Block upload - no body detected
+            errors.push(bodyResult.message || 'No body detected in photo. Please upload a full-body photo with you standing clearly visible.');
+        } else if (bodyResult.state === 'warning') {
+            // WARNING: Show notification but allow upload - partial body detected
+            warnings.push(bodyResult.message || 'Partial body detected. For best try-on results, use a full-body photo with both your shoulders and hips clearly visible.');
+        }
+        // SUCCESS: No action needed - full body detected, allow silently
     }
+    // If state is null, silent fail - don't block or warn (graceful degradation)
     
     return {
         isValid: errors.length === 0,
@@ -2348,6 +2695,9 @@ function selectClothingFromBrowser(clothingId) {
     });
     
     event.target.closest('.browser-clothing-card').classList.add('selected');
+    
+    // Update preview
+    updateSelectedClothingPreview(clothingId);
     
     closeClothingBrowser();
     populateFeaturedAndQuickPicks();
@@ -3503,6 +3853,111 @@ async function applyWidgetTheme() {
     widget.classList.add(`theme-${theme}`);
 }
 
+/**
+ * Apply minimized widget color from store configuration
+ * Reads the minimized_color from window.ELLO_STORE_CONFIG and applies it
+ * Falls back to default gradient if color is not set
+ */
+function applyMinimizedWidgetColor() {
+    const widget = document.getElementById('virtualTryonWidget');
+    if (!widget) {
+        console.warn('⚠️ Widget element not found for color application');
+        return;
+    }
+    
+    // Get color from store configuration
+    const storeConfig = window.ELLO_STORE_CONFIG;
+    let minimizedColor = null;
+    
+    console.log('🎨 Applying minimized color. Store config:', storeConfig);
+    
+    if (storeConfig && storeConfig.minimizedColor) {
+        minimizedColor = storeConfig.minimizedColor.trim();
+        console.log('🎨 Found minimized color:', minimizedColor);
+        
+        // Validate hex color format
+        const hexColorRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
+        if (!hexColorRegex.test(minimizedColor)) {
+            console.warn('❌ Invalid hex color format:', minimizedColor);
+            minimizedColor = null;
+        } else {
+            console.log('✅ Valid hex color format');
+        }
+    } else {
+        console.log('ℹ️ No minimized color found in store config. storeConfig:', storeConfig);
+        if (!storeConfig) {
+            console.log('⚠️ Store config not loaded yet. Color will use default.');
+        }
+    }
+    
+    // Apply color if valid, otherwise use default gradient
+    if (minimizedColor) {
+        // Convert hex to RGB for better gradient effect
+        let hex = minimizedColor.replace('#', '');
+        
+        // Handle 3-character hex codes (e.g., #FFF -> #FFFFFF)
+        if (hex.length === 3) {
+            hex = hex.split('').map(char => char + char).join('');
+        }
+        
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        
+        console.log('🎨 Converting color to RGB:', { r, g, b });
+        
+        // Create a subtle gradient from the base color
+        const lighterR = Math.min(255, r + 30);
+        const lighterG = Math.min(255, g + 30);
+        const lighterB = Math.min(255, b + 30);
+        const darkerR = Math.max(0, r - 20);
+        const darkerG = Math.max(0, g - 20);
+        const darkerB = Math.max(0, b - 20);
+        
+        const gradient = `linear-gradient(135deg, rgb(${darkerR}, ${darkerG}, ${darkerB}) 0%, rgb(${r}, ${g}, ${b}) 50%, rgb(${lighterR}, ${lighterG}, ${lighterB}) 100%)`;
+        
+        // Store the gradient in a data attribute for when widget is minimized
+        widget.setAttribute('data-minimized-gradient', gradient);
+        
+        // Apply as inline style (will override CSS when minimized)
+        widget.style.setProperty('--minimized-bg', minimizedColor);
+        
+        // Always apply to minimized state (CSS handles visibility)
+        const isMinimized = widget.classList.contains('widget-minimized');
+        if (isMinimized) {
+            widget.style.background = gradient;
+            console.log('✅ Applied gradient to minimized widget:', gradient);
+        } else {
+            console.log('ℹ️ Widget not minimized yet, gradient will apply when minimized');
+        }
+        
+        // Determine text color based on brightness for contrast
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        const textColor = brightness > 128 ? '#333' : '#fff';
+        const textShadow = brightness > 128 
+            ? '0 2px 4px rgba(255,255,255,0.8)' 
+            : '0 2px 4px rgba(0,0,0,0.8)';
+        
+        // Update text color and shadow via CSS variables
+        widget.style.setProperty('--minimized-text-color', textColor);
+        widget.style.setProperty('--minimized-text-shadow', textShadow);
+        
+        console.log('✅ Applied minimized widget color:', minimizedColor, '| Text color:', textColor);
+    } else {
+        // Remove inline styles to use default CSS gradient
+        widget.style.removeProperty('--minimized-bg');
+        widget.style.removeProperty('--minimized-text-color');
+        widget.style.removeProperty('--minimized-text-shadow');
+        widget.removeAttribute('data-minimized-gradient');
+        
+        const isMinimized = widget.classList.contains('widget-minimized');
+        if (isMinimized) {
+            widget.style.background = '';
+        }
+        console.log('✅ Using default minimized widget gradient');
+    }
+}
+
 // ============================================================================
 // WARDROBE FUNCTIONALITY
 // ============================================================================
@@ -3835,6 +4290,9 @@ function selectWardrobeItem(tryOnId) {
     if (quickPickItem) {
         quickPickItem.classList.add('selected');
     }
+    
+    // Don't show preview - wardrobe item selection updates visible quick picks/featured
+    updateSelectedClothingPreview(null);
     
     // Update try-on button
     updateTryOnButton();
