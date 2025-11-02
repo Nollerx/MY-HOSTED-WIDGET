@@ -153,6 +153,17 @@
             const scripts = doc.querySelectorAll('script');
             scripts.forEach(script => script.remove());
             
+            // Fix image paths to use hosted URL
+            const images = doc.querySelectorAll('img[id="goodExampleImage"], img[id="badExampleImage"]');
+            images.forEach(img => {
+                const currentSrc = img.getAttribute('src');
+                // If it's a relative path (doesn't start with http:// or https://), make it absolute
+                if (currentSrc && !currentSrc.startsWith('http://') && !currentSrc.startsWith('https://')) {
+                    img.setAttribute('src', `${WIDGET_BASE_URL}/${currentSrc}`);
+                    console.log('🖼️ Updated image path:', currentSrc, '→', `${WIDGET_BASE_URL}/${currentSrc}`);
+                }
+            });
+            
             // Get the body content
             const bodyContent = doc.body.innerHTML;
             
@@ -181,6 +192,5 @@
     // Start the initialization process
     initializeWidget();
 })();
-
 
 
