@@ -1,12 +1,13 @@
 (function () {
     console.log('Widget loader starting...');
     
-    const WIDGET_BASE_URL = "https://nollerx.github.io/MY-HOSTED-WIDGET-DEV";
+    const WIDGET_BASE_URL = "https://nollerx.github.io/MY-HOSTED-WIDGET9";
     
     // Get store configuration from script tag
     const currentScript = document.currentScript;
-    const storeId = currentScript.dataset.storeId || 'default-store';
-    const storeName = currentScript.dataset.storeName || 'default-name';
+    // Use 'default_store' for testing when no script tag or store ID is provided
+    const storeId = currentScript?.dataset?.storeId || 'default_store';
+    const storeName = currentScript?.dataset?.storeName || 'default-name';
     
     console.log('Store configuration:', { storeId, storeName });
     
@@ -37,20 +38,24 @@
                     var storeConfig = data[0];
                     console.log('🗄️ Individual store config:', storeConfig);
                     console.log('🗄️ clothing_population_type from DB:', storeConfig.clothing_population_type);
+                    console.log('🎨 minimized_color from DB:', storeConfig.minimized_color);
                     window.ELLO_STORE_CONFIG = {
                         storeId: storeConfig.store_id,
                         storeName: storeName, // Keep the original script tag value for Shopify
                         clothingPopulationType: storeConfig.clothing_population_type || 'supabase',
-                        planName: storeConfig.plan_name
+                        planName: storeConfig.plan_name,
+                        minimizedColor: storeConfig.minimized_color || null
                     };
                     console.log('✅ Store configuration loaded:', window.ELLO_STORE_CONFIG);
+                    console.log('🎨 Minimized color in config:', window.ELLO_STORE_CONFIG.minimizedColor);
                 } else {
                     // Fallback to default configuration
                     window.ELLO_STORE_CONFIG = {
                         storeId: storeId,
                         storeName: storeName,
                         clothingPopulationType: 'supabase',
-                        planName: 'STARTER'
+                        planName: 'STARTER',
+                        minimizedColor: null
                     };
                     console.log('⚠️ Store not found in Supabase, using default configuration:', window.ELLO_STORE_CONFIG);
                 }
@@ -63,7 +68,8 @@
                     storeId: storeId,
                     storeName: storeName,
                     clothingPopulationType: 'supabase',
-                    planName: 'STARTER'
+                    planName: 'STARTER',
+                    minimizedColor: null
                 };
                 console.log('⚠️ Error occurred, using fallback configuration:', window.ELLO_STORE_CONFIG);
                 resolve(window.ELLO_STORE_CONFIG);
@@ -175,4 +181,5 @@
     // Start the initialization process
     initializeWidget();
 })();
+
 
