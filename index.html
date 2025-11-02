@@ -2827,7 +2827,8 @@ body {
     background: linear-gradient(135deg, #ffffff 0%, #fafbfc 100%);
     width: 90vw;
     max-width: 680px;
-    max-height: 85vh;
+    max-height: 95vh;
+    height: fit-content;
     border-radius: 24px;
     display: flex;
     flex-direction: column;
@@ -2850,26 +2851,14 @@ body {
 }
 
 .best-practices-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: #ffffff;
-    padding: 32px 32px 28px 32px;
+    background: linear-gradient(135deg, #ffffff 0%, #fafbfc 100%);
+    color: #1a1a1a;
+    padding: 24px 32px 20px 32px;
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
-    border-bottom: none;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
     position: relative;
-    overflow: hidden;
-}
-
-.best-practices-header::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
-    pointer-events: none;
 }
 
 .best-practices-title {
@@ -2878,26 +2867,15 @@ body {
     margin: 0;
     text-transform: none;
     letter-spacing: -0.3px;
-    position: relative;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.best-practices-title::before {
-    content: '';
-    width: 4px;
-    height: 32px;
-    background: rgba(255, 255, 255, 0.4);
-    border-radius: 2px;
-    display: block;
+    color: #1a1a1a;
+    text-align: center;
+    flex: 1;
 }
 
 .best-practices-close {
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: #ffffff;
+    background: rgba(0, 0, 0, 0.05);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    color: #333;
     font-size: 20px;
     cursor: pointer;
     padding: 0;
@@ -2909,26 +2887,42 @@ body {
     justify-content: center;
     -webkit-tap-highlight-color: transparent;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
     z-index: 1;
-    backdrop-filter: blur(10px);
 }
 
 .best-practices-close:hover {
-    background: rgba(255, 255, 255, 0.25);
-    transform: rotate(90deg) scale(1.05);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    background: rgba(0, 0, 0, 0.1);
+    transform: translateY(-50%) rotate(90deg) scale(1.05);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .best-practices-close:active {
-    transform: rotate(90deg) scale(0.95);
+    transform: translateY(-50%) rotate(90deg) scale(0.95);
+}
+
+/* Disclaimer Note */
+.best-practices-note {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.best-practices-note p {
+    font-size: 13px;
+    color: #4a5568;
+    margin: 0;
+    line-height: 1.5;
+    text-align: center;
 }
 
 .best-practices-body {
     flex: 1;
     padding: 32px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
     background: linear-gradient(135deg, #ffffff 0%, #fafbfc 100%);
 }
 
@@ -3245,22 +3239,25 @@ body {
 @media (max-width: 768px) {
     .best-practices-content {
         width: 95vw;
-        max-height: 90vh;
+        max-height: 95vh;
         border-radius: 20px;
     }
 
     .best-practices-header {
-        padding: 24px 24px 20px 24px;
+        padding: 20px 24px 16px 24px;
     }
 
     .best-practices-title {
         font-size: 20px;
-        gap: 10px;
     }
-
-    .best-practices-title::before {
-        height: 28px;
-        width: 3px;
+    
+    .best-practices-note {
+        margin-top: 20px;
+        padding-top: 16px;
+    }
+    
+    .best-practices-note p {
+        font-size: 12px;
     }
 
     .best-practices-close {
@@ -4621,7 +4618,7 @@ body {
     <div id="bestPracticesModal" class="best-practices-modal">
         <div class="best-practices-content">
             <div class="best-practices-header">
-                <h2 class="best-practices-title">Photo Tips for Best Results</h2>
+                <h2 class="best-practices-title">How to get the best results</h2>
                 <button class="best-practices-close" onclick="closeBestPracticesModal()" aria-label="Close tips modal">&times;</button>
             </div>
             <div class="best-practices-body">
@@ -4744,6 +4741,11 @@ body {
                             <span>Low resolution</span>
                         </div>
                     </div>
+                </div>
+                
+                <!-- Disclaimer Note -->
+                <div class="best-practices-note">
+                    <p>Note: Body shapes and personal features may not be accurately represented in virtual try-on results.</p>
                 </div>
             </div>
             <div class="best-practices-footer">
