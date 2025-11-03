@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- CSP: Allow embedding from anywhere (widget is injected via JS, not iframe, but this ensures compatibility) -->
+    <meta http-equiv="Content-Security-Policy" content="frame-ancestors *;">
     <title>Virtual Try-On Widget</title>
     <!-- Google Fonts - Poppins -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -224,9 +226,24 @@
 
        /* Reset and base styles - SCOPED to widget container only */
 #virtual-tryon-widget-container * {
+    box-sizing: border-box;
+}
+
+/* Only reset margins/padding on specific elements that need it, not all elements */
+#virtual-tryon-widget-container > * {
     margin: 0;
     padding: 0;
-    box-sizing: border-box;
+}
+
+/* Preserve default spacing for headings and text elements */
+#virtual-tryon-widget-container h1,
+#virtual-tryon-widget-container h2,
+#virtual-tryon-widget-container h3,
+#virtual-tryon-widget-container h4,
+#virtual-tryon-widget-container h5,
+#virtual-tryon-widget-container h6,
+#virtual-tryon-widget-container p {
+    margin: 0;
 }
 
 #virtual-tryon-widget-container {
