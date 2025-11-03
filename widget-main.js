@@ -1308,20 +1308,30 @@ function handleBestPracticesUpload() {
     // Close the modal
     closeBestPracticesModal(true);
     
+    // Execute pending photo action if it exists (from gallery or camera button)
+    const action = pendingPhotoAction;
+    pendingPhotoAction = null;
+    
     // Trigger photo upload after a short delay to allow modal to close
     setTimeout(() => {
-        if (isMobile) {
-            // On mobile, show camera controls or let user choose
-            // The camera controls should already be visible if needed
-            const cameraControls = document.getElementById('cameraControls');
-            if (cameraControls) {
-                cameraControls.style.display = 'flex';
-            }
+        if (action) {
+            // Execute the pending action (proceedWithChooseFromGallery or proceedWithTakePicture)
+            action();
         } else {
-            // On desktop, trigger file input click
-            const photoInput = document.getElementById('photoInput');
-            if (photoInput) {
-                photoInput.click();
+            // Fallback to default behavior if no pending action
+            if (isMobile) {
+                // On mobile, show camera controls or let user choose
+                // The camera controls should already be visible if needed
+                const cameraControls = document.getElementById('cameraControls');
+                if (cameraControls) {
+                    cameraControls.style.display = 'flex';
+                }
+            } else {
+                // On desktop, trigger file input click
+                const photoInput = document.getElementById('photoInput');
+                if (photoInput) {
+                    photoInput.click();
+                }
             }
         }
     }, 300);
@@ -1959,6 +1969,12 @@ async function handlePhotoUpload(event) {
         try {
             const imageDataUrl = e.target.result;
             
+            // Show analyzing overlay on mobile
+            const analysisOverlay = document.getElementById('photoAnalysisOverlay');
+            if (isMobile && analysisOverlay) {
+                analysisOverlay.style.display = 'flex';
+            }
+            
             // Show analyzing state
             const uploadText = uploadArea?.querySelector('.upload-text:not(#changePhotoText)');
             if (uploadText) {
@@ -1970,6 +1986,10 @@ async function handlePhotoUpload(event) {
             const qualityResult = await validateImageQuality(imageDataUrl);
             
             if (!qualityResult.isValid) {
+                // Hide overlay
+                if (isMobile && analysisOverlay) {
+                    analysisOverlay.style.display = 'none';
+                }
                 // Restore original text
                 if (uploadText) {
                     uploadText.textContent = uploadArea.querySelector('.upload-icon') ? 'Tap to upload full body image' : 'Click to upload full body image';
@@ -2005,6 +2025,11 @@ async function handlePhotoUpload(event) {
             console.error('Error processing uploaded image:', error);
             showSuccessNotification('Upload Error', 'Failed to process the image. Please try again.', 4000);
         } finally {
+            // Hide overlay
+            const analysisOverlay = document.getElementById('photoAnalysisOverlay');
+            if (isMobile && analysisOverlay) {
+                analysisOverlay.style.display = 'none';
+            }
             if (uploadArea) {
                 uploadArea.classList.remove('uploading');
             }
