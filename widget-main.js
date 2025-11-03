@@ -2628,10 +2628,10 @@ async function validateImageQuality(imageSrc) {
         };
     }
     
-    // Check minimum resolution
-    const MIN_RESOLUTION = 512;
+    // Check minimum resolution - relaxed to allow more images
+    const MIN_RESOLUTION = 300;
     if (analysis.width < MIN_RESOLUTION || analysis.height < MIN_RESOLUTION) {
-        errors.push(`Image resolution is too low. Please use an image at least ${MIN_RESOLUTION}x${MIN_RESOLUTION} pixels.`);
+        warnings.push(`Image resolution is on the lower side. For best results, use an image at least ${MIN_RESOLUTION}x${MIN_RESOLUTION} pixels.`);
     }
     
     // Check aspect ratio (portrait orientation) - warning only, not blocking
