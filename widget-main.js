@@ -1435,9 +1435,57 @@ function openWidget() {
     widget.classList.remove('widget-minimized');
     widgetOpen = true;
     
-    if (isMobile) {
-        document.body.style.overflow = 'hidden';
+    // Lock background scrolling on all devices when widget is open
+    document.body.style.overflow = 'hidden';
+    
+    // Prevent scroll events from bubbling to background on desktop
+    if (!isMobile) {
+        // Save current scroll position
+        const scrollY = window.scrollY;
+        document.body.style.position = 'fixed';
+        document.body.style.top = `-${scrollY}px`;
+        document.body.style.width = '100%';
     }
+    
+    // Prevent scroll events from the widget from reaching the background
+    // Store handlers so we can remove them later
+    window._widgetScrollHandler = (e) => {
+        // Only prevent if the event is inside the widget
+        if (!widget.contains(e.target)) {
+            return;
+        }
+        
+        // Find the scrollable container within the widget
+        const scrollableContent = widget.querySelector('.widget-content, .tryon-content, .chat-container');
+        if (!scrollableContent) {
+            // If no scrollable content, prevent all scroll events
+            e.stopPropagation();
+            e.preventDefault();
+            return;
+        }
+        
+        // Check if we're at the boundaries
+        const { scrollTop, scrollHeight, clientHeight } = scrollableContent;
+        const isAtTop = scrollTop <= 0;
+        const isAtBottom = scrollTop + clientHeight >= scrollHeight - 1;
+        
+        // If at top scrolling up, or at bottom scrolling down, prevent background scroll
+        if ((isAtTop && e.deltaY < 0) || (isAtBottom && e.deltaY > 0)) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+    };
+    
+    window._widgetTouchHandler = (e) => {
+        // Stop touch events from the widget from bubbling to background
+        if (widget.contains(e.target)) {
+            e.stopPropagation();
+        }
+    };
+    
+    // Add scroll prevention listeners at capture phase to catch events early
+    document.addEventListener('wheel', window._widgetScrollHandler, { passive: false, capture: true });
+    document.addEventListener('touchmove', window._widgetTouchHandler, { passive: false, capture: true });
     
     loadChatHistory();
     if (currentMode === 'tryon') {
@@ -1494,8 +1542,29 @@ function closeWidget() {
         applyMinimizedWidgetColor();
     }
     
-    // Reset body overflow
+    // Remove scroll prevention listeners
+    if (window._widgetScrollHandler) {
+        document.removeEventListener('wheel', window._widgetScrollHandler, { capture: true });
+        window._widgetScrollHandler = null;
+    }
+    if (window._widgetTouchHandler) {
+        document.removeEventListener('touchmove', window._widgetTouchHandler, { capture: true });
+        window._widgetTouchHandler = null;
+    }
+    
+    // Reset body overflow and scroll lock
     document.body.style.overflow = '';
+    
+    // Restore scroll position on desktop
+    if (!isMobile) {
+        const scrollY = document.body.style.top;
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.width = '';
+        if (scrollY) {
+            window.scrollTo(0, parseInt(scrollY || '0') * -1);
+        }
+    }
     
     // Reset mode buttons
     document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
