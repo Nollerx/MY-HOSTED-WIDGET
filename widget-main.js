@@ -156,6 +156,10 @@ let isTablet = false
 let isIOS = false;
 let isAndroid = false;
 
+// Mobile scroll lock variables
+let scrollLockPosition = 0;
+let scrollLockTouchHandler = null;
+
 // ============================================================================
 // CONFIGURATION & CONSTANTS
 // ============================================================================
@@ -1429,15 +1433,78 @@ function handlePhotoUploadClick() {
     }
 }
 
+/**
+ * Lock body scroll on mobile to prevent background scrolling when widget is open
+ */
+function lockBodyScroll() {
+    if (!isMobile) return;
+    
+    // Store current scroll position
+    scrollLockPosition = window.pageYOffset || document.documentElement.scrollTop;
+    
+    // Set body to fixed position at current scroll
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollLockPosition}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+    document.body.style.overflow = 'hidden';
+    
+    // Prevent touch scrolling on body (but allow it in widget)
+    scrollLockTouchHandler = function(e) {
+        // Allow scrolling within the widget container
+        const widget = document.getElementById('virtualTryonWidget');
+        const widgetContainer = document.getElementById('virtual-tryon-widget-container');
+        const target = e.target;
+        
+        // Check if touch is inside widget or its container
+        if (widget && (widget.contains(target) || widget === target)) {
+            return; // Allow touch events in widget
+        }
+        if (widgetContainer && (widgetContainer.contains(target) || widgetContainer === target)) {
+            return; // Allow touch events in container
+        }
+        
+        // Prevent all other touch scrolling
+        e.preventDefault();
+    };
+    
+    document.addEventListener('touchmove', scrollLockTouchHandler, { passive: false });
+}
+
+/**
+ * Unlock body scroll on mobile and restore scroll position
+ */
+function unlockBodyScroll() {
+    if (!isMobile) return;
+    
+    // Remove fixed positioning
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.width = '';
+    document.body.style.overflow = '';
+    
+    // Restore scroll position
+    window.scrollTo(0, scrollLockPosition);
+    scrollLockPosition = 0;
+    
+    // Remove touch handler
+    if (scrollLockTouchHandler) {
+        document.removeEventListener('touchmove', scrollLockTouchHandler);
+        scrollLockTouchHandler = null;
+    }
+}
+
 function openWidget() {
     const widget = document.getElementById('virtualTryonWidget');
     
     widget.classList.remove('widget-minimized');
     widgetOpen = true;
     
-    if (isMobile) {
-        document.body.style.overflow = 'hidden';
-    }
+    // Lock body scroll on mobile
+    lockBodyScroll();
     
     loadChatHistory();
     if (currentMode === 'tryon') {
@@ -1494,8 +1561,8 @@ function closeWidget() {
         applyMinimizedWidgetColor();
     }
     
-    // Reset body overflow
-    document.body.style.overflow = '';
+    // Unlock body scroll on mobile
+    unlockBodyScroll();
     
     // Reset mode buttons
     document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
