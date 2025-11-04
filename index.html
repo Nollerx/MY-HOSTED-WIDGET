@@ -1739,6 +1739,7 @@
     padding: 20px;
     background: #ffffff;
     border-top: 1px solid #e0e0e0;
+    position: relative;
 }
 
 /* Ensure result section is visible when loading */
@@ -2036,6 +2037,9 @@
 /* Buy Now Button */
 .buy-now-container {
     margin-top: 16px;
+    position: relative;
+    display: inline-block;
+    width: 100%;
 }
 
 .buy-now-btn {
@@ -2047,7 +2051,7 @@
     font-size: 14px;
     font-weight: 700;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -2055,32 +2059,44 @@
     text-transform: uppercase;
     letter-spacing: 1px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    position: relative;
+    min-width: fit-content;
+    width: auto;
 }
 
 .buy-now-btn:hover {
     background: linear-gradient(135deg, #222 0%, #444 100%);
-    transform: translateY(-1px);
     box-shadow: 0 6px 20px rgba(0,0,0,0.2);
 }
 
 .buy-now-btn.loading {
     opacity: 0.7;
     cursor: not-allowed;
+    transform: none !important;
+    position: relative;
+    left: 0 !important;
+    right: 0 !important;
 }
 
 .buy-now-btn .loading-spinner {
-    display: none;
     width: 16px;
     height: 16px;
-    border: 2px solid #ccc;
-    border-top: 2px solid #fff;
+    border: 2px solid transparent;
+    border-top: 2px solid transparent;
     border-radius: 50%;
-    animation: spin 1s linear infinite;
     margin-right: 8px;
+    flex-shrink: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition: none;
 }
 
 .buy-now-btn.loading .loading-spinner {
-    display: block;
+    border: 2px solid #ccc;
+    border-top: 2px solid #fff;
+    animation: spin 1s linear infinite;
+    opacity: 1;
+    visibility: visible;
 }
 
 .buy-now-btn.loading .btn-text {
