@@ -1507,6 +1507,15 @@ function openWidget() {
     lockBodyScroll();
     
     loadChatHistory();
+    
+    // Restore photo preview if userPhoto exists
+    if (userPhoto) {
+        updatePhotoPreview(userPhoto);
+    } else {
+        // Reset upload area if no photo exists
+        resetPhotoUploadArea();
+    }
+    
     if (currentMode === 'tryon') {
         populateFeaturedAndQuickPicks();
         // 🎯 ADD THESE LINES AT THE END OF YOUR EXISTING openWidget() FUNCTION:
@@ -1618,10 +1627,16 @@ function resetPhotoUploadArea() {
     const uploadIcon = uploadArea.querySelector('.upload-icon');
     const uploadText = uploadArea.querySelector('.upload-text:not(#changePhotoText)');
     const changeText = document.getElementById('changePhotoText');
+    const preview = document.getElementById('photoPreview');
     
     if (uploadIcon) uploadIcon.style.display = 'block';
-    if (uploadText) uploadText.style.display = 'block';
+    if (uploadText) {
+        uploadText.style.display = 'block';
+        // Reset text to default in case it was stuck on "Analyzing image quality..."
+        uploadText.textContent = isMobile ? 'Tap to upload full body image' : 'Click to upload full body image';
+    }
     if (changeText) changeText.style.display = 'none';
+    if (preview) preview.style.display = 'none';
 }
 
 function switchMode(mode) {
@@ -2772,7 +2787,11 @@ function updatePhotoPreview(imageData) {
     if (uploadArea) {
         // Hide the upload elements
         if (uploadIcon) uploadIcon.style.display = 'none';
-        if (uploadText) uploadText.style.display = 'none';
+        if (uploadText) {
+            uploadText.style.display = 'none';
+            // Reset text to default in case it was stuck on "Analyzing image quality..."
+            uploadText.textContent = isMobile ? 'Tap to upload full body image' : 'Click to upload full body image';
+        }
         
         uploadArea.classList.add('has-photo');
         uploadArea.style.display = 'block';
