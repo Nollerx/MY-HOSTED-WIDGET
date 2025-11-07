@@ -1012,6 +1012,39 @@
     }
 }
 
+/* Photo Tips Icon - subtle top-right corner */
+.photo-tips-icon {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: transparent;
+    border: none;
+    font-size: 16px;
+    color: #999;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+    opacity: 0.6;
+    transition: opacity 0.2s ease, color 0.2s ease;
+    z-index: 10;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.photo-tips-icon:hover {
+    opacity: 1;
+    color: #6366f1;
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.photo-tips-icon:active {
+    opacity: 0.8;
+}
+
 .photo-upload::before {
     content: '';
     position: absolute;
@@ -4310,6 +4343,7 @@
 .theme-black .browser-card-price,
 .theme-black .browse-all-btn,
 .theme-black .photo-instruction,
+.theme-black .photo-tips-icon,
 .theme-black .upload-text,
 .theme-black .buy-now-btn,
 .theme-black .btn,
@@ -4351,6 +4385,15 @@
     background: #23272f !important;
     border: 2px dashed #fff !important;
     color: #fff !important;
+}
+
+.theme-black .photo-tips-icon {
+    color: #ccc !important;
+}
+
+.theme-black .photo-tips-icon:hover {
+    color: #fff !important;
+    background: rgba(255, 255, 255, 0.1) !important;
 }
 .theme-black .photo-upload.has-photo {
     background: #181a1b !important;
@@ -4687,6 +4730,7 @@
                     <div class="photo-section-content">
                         <!-- Photo Upload Area -->
                         <div class="photo-upload" onclick="handlePhotoUploadClick()">
+                            <button class="photo-tips-icon" onclick="event.stopPropagation(); showBestPracticesModal();" aria-label="View photo tips for best results" title="Photo Tips">ℹ️</button>
                             <div class="upload-icon">🧍</div>
                             <div class="upload-text">Tap to upload full body image</div>
                             <img id="photoPreview" class="photo-preview" style="display: none;">
