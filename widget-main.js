@@ -71,6 +71,9 @@ window.initializeWidget = function() {
         console.log('✅ Store config already loaded');
     }
     
+    // Load saved photo from storage on initialization
+    loadSavedPhoto();
+    
     // Load clothing data from Shopify
     loadClothingData().then(() => {
         console.log('Initial clothing data load complete');
@@ -1082,6 +1085,62 @@ let currentMode = 'tryon';
 let selectedClothing = null;
 let userPhoto = null;
 let userPhotoFileId = null;
+
+// Storage keys for photo persistence
+const USER_PHOTO_STORAGE_KEY = 'vtow_user_photo';
+const USER_PHOTO_FILE_ID_STORAGE_KEY = 'vtow_user_photo_file_id';
+
+// Load saved photo from localStorage
+function loadSavedPhoto() {
+    try {
+        const savedPhoto = localStorage.getItem(USER_PHOTO_STORAGE_KEY);
+        const savedFileId = localStorage.getItem(USER_PHOTO_FILE_ID_STORAGE_KEY);
+        
+        if (savedPhoto) {
+            userPhoto = savedPhoto;
+            userPhotoFileId = savedFileId || 'photo_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            console.log('✅ Loaded saved photo from storage');
+            return true;
+        }
+    } catch (error) {
+        console.error('Error loading saved photo:', error);
+    }
+    return false;
+}
+
+// Save photo to localStorage
+function savePhotoToStorage(photoData, fileId) {
+    try {
+        if (photoData) {
+            localStorage.setItem(USER_PHOTO_STORAGE_KEY, photoData);
+            if (fileId) {
+                localStorage.setItem(USER_PHOTO_FILE_ID_STORAGE_KEY, fileId);
+            }
+            console.log('✅ Saved photo to storage');
+        } else {
+            // Clear storage if photo is null
+            localStorage.removeItem(USER_PHOTO_STORAGE_KEY);
+            localStorage.removeItem(USER_PHOTO_FILE_ID_STORAGE_KEY);
+        }
+    } catch (error) {
+        console.error('Error saving photo to storage:', error);
+        // Handle quota exceeded error gracefully
+        if (error.name === 'QuotaExceededError') {
+            console.warn('Storage quota exceeded. Photo not saved.');
+        }
+    }
+}
+
+// Clear saved photo from storage
+function clearSavedPhoto() {
+    try {
+        localStorage.removeItem(USER_PHOTO_STORAGE_KEY);
+        localStorage.removeItem(USER_PHOTO_FILE_ID_STORAGE_KEY);
+        console.log('✅ Cleared saved photo from storage');
+    } catch (error) {
+        console.error('Error clearing saved photo:', error);
+    }
+}
 let sessionId = generateSessionId();
 let filteredClothing = [...sampleClothing];
 let userEmail = null;
@@ -1508,6 +1567,11 @@ function openWidget() {
     
     loadChatHistory();
     
+    // Try to load saved photo from storage if not already loaded
+    if (!userPhoto) {
+        loadSavedPhoto();
+    }
+    
     // Restore photo preview if userPhoto exists
     if (userPhoto) {
         updatePhotoPreview(userPhoto);
@@ -1839,6 +1903,9 @@ function resetSelection() {
     userPhoto = null;
     userPhotoFileId = null;
     
+    // Clear saved photo from storage when resetting
+    clearSavedPhoto();
+    
     // Clear processing state
     isTryOnProcessing = false;
     
@@ -1854,16 +1921,19 @@ function resetSelection() {
     const preview = document.getElementById('photoPreview');
     const uploadArea = document.querySelector('.photo-upload');
     const changeText = document.getElementById('changePhotoText');
-    const uploadIcon = uploadArea.querySelector('.upload-icon');
-    const uploadText = uploadArea.querySelector('.upload-text:not(#changePhotoText)');
+    const uploadIcon = uploadArea?.querySelector('.upload-icon');
+    const uploadText = uploadArea?.querySelector('.upload-text:not(#changePhotoText)');
     
-    preview.style.display = 'none';
-    uploadArea.classList.remove('has-photo');
-    changeText.style.display = 'none';
+    if (preview) preview.style.display = 'none';
+    if (uploadArea) uploadArea.classList.remove('has-photo');
+    if (changeText) changeText.style.display = 'none';
     
     // Show the upload elements again
-    uploadIcon.style.display = 'block';
-    uploadText.style.display = 'block';
+    if (uploadIcon) uploadIcon.style.display = 'block';
+    if (uploadText) {
+        uploadText.style.display = 'block';
+        uploadText.textContent = isMobile ? 'Tap to upload full body image' : 'Click to upload full body image';
+    }
     
     // Hide result section
     const resultSection = document.getElementById('resultSection');
@@ -2157,6 +2227,9 @@ async function handlePhotoUpload(event) {
             // Image passed all checks
             userPhoto = imageDataUrl;
             userPhotoFileId = 'photo_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            
+            // Save photo to localStorage for persistence
+            savePhotoToStorage(imageDataUrl, userPhotoFileId);
             
             updatePhotoPreview(imageDataUrl);
             updateTryOnButton();
