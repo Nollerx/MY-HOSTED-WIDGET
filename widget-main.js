@@ -2350,36 +2350,47 @@ async function loadFaceApi() {
         // Check if Face-API.js is available
         if (typeof faceapi === 'undefined') {
             // Try to load from CDN
-            await new Promise((resolve, reject) => {
+            await new Promise((resolve) => {
                 try {
                     const script = document.createElement('script');
                     script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js';
                     script.onload = () => {
-                        // Use setTimeout to ensure faceapi is fully initialized
-                        setTimeout(() => {
-                            // Check if faceapi is now available
-                            if (typeof faceapi === 'undefined') {
-                                console.log('Face-API.js loaded but faceapi object not available');
-                                faceApiLoading = false;
-                                faceApiLoaded = false;
-                                resolve();
-                                return;
-                            }
-                            
-                            // Load the model asynchronously
-                            faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model')
-                                .then(() => {
-                                    faceApiLoaded = true;
-                                    faceApiLoading = false;
-                                    resolve();
-                                })
-                                .catch((e) => {
-                                    console.log('Face-API model loading failed:', e);
+                        // Wait for faceapi to be available and TensorFlow to be ready
+                        setTimeout(async () => {
+                            try {
+                                // Check if faceapi is now available
+                                if (typeof faceapi === 'undefined') {
+                                    console.log('Face-API.js loaded but faceapi object not available');
                                     faceApiLoading = false;
                                     faceApiLoaded = false;
-                                    resolve(); // Don't reject, just continue without face detection
-                                });
-                        }, 1000);
+                                    resolve();
+                                    return;
+                                }
+                                
+                                // Wait for TensorFlow to be ready (face-api uses TensorFlow internally)
+                                if (typeof tf !== 'undefined' && tf.ready) {
+                                    try {
+                                        await tf.ready();
+                                    } catch (tfError) {
+                                        console.log('TensorFlow ready check failed:', tfError);
+                                    }
+                                }
+                                
+                                // Try to load the model
+                                if (faceapi && faceapi.nets && faceapi.nets.tinyFaceDetector) {
+                                    await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model');
+                                    faceApiLoaded = true;
+                                } else {
+                                    console.log('Face-API nets not available');
+                                    faceApiLoaded = false;
+                                }
+                            } catch (e) {
+                                console.log('Face-API model loading failed:', e);
+                                faceApiLoaded = false;
+                            }
+                            faceApiLoading = false;
+                            resolve();
+                        }, 1500);
                     };
                     script.onerror = () => {
                         console.log('Face-API.js failed to load');
@@ -2398,13 +2409,30 @@ async function loadFaceApi() {
         } else {
             // Face-API is already available, try to load the model
             try {
-                if (faceapi && faceapi.nets && faceapi.nets.tinyFaceDetector) {
-                    await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model');
+                // Wait for TensorFlow to be ready
+                if (typeof tf !== 'undefined' && tf.ready) {
+                    await tf.ready();
                 }
-                faceApiLoaded = true;
+                
+                if (faceapi && faceapi.nets && faceapi.nets.tinyFaceDetector) {
+                    // Check if model is already loaded
+                    try {
+                        await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model');
+                        faceApiLoaded = true;
+                    } catch (loadError) {
+                        // Model might already be loaded, check if we can use it
+                        if (loadError.message && loadError.message.includes('already loaded')) {
+                            faceApiLoaded = true;
+                        } else {
+                            throw loadError;
+                        }
+                    }
+                } else {
+                    faceApiLoaded = false;
+                }
             } catch (e) {
-                console.log('Face-API model already loaded but failed to verify:', e);
-                faceApiLoaded = true; // Assume it's loaded if faceapi exists
+                console.log('Face-API model loading failed:', e);
+                faceApiLoaded = false;
             }
             faceApiLoading = false;
         }
@@ -2502,8 +2530,18 @@ let movenetModel = null;
 async function loadTensorFlow() {
     // Check if TensorFlow.js is already loaded (possibly by Face-API.js)
     if (typeof tf !== 'undefined') {
-        tfLoaded = true;
-        return true;
+        // Wait for TensorFlow to be ready
+        try {
+            if (tf.ready) {
+                await tf.ready();
+            }
+            tfLoaded = true;
+            return true;
+        } catch (error) {
+            console.log('TensorFlow ready check failed:', error);
+            tfLoaded = false;
+            return false;
+        }
     }
     
     if (tfLoaded || tfLoading) return tfLoaded;
@@ -2514,11 +2552,19 @@ async function loadTensorFlow() {
         await new Promise((resolve) => {
             const script = document.createElement('script');
             script.src = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js';
-            script.onload = () => {
-                // Double-check it loaded
-                if (typeof tf !== 'undefined') {
-                    tfLoaded = true;
-                } else {
+            script.onload = async () => {
+                try {
+                    // Double-check it loaded and wait for it to be ready
+                    if (typeof tf !== 'undefined') {
+                        if (tf.ready) {
+                            await tf.ready();
+                        }
+                        tfLoaded = true;
+                    } else {
+                        tfLoaded = false;
+                    }
+                } catch (error) {
+                    console.log('TensorFlow initialization error:', error);
                     tfLoaded = false;
                 }
                 tfLoading = false;
@@ -2550,36 +2596,68 @@ async function loadMoveNetModel() {
         return null;
     }
     
+    // Ensure TensorFlow is ready before loading models
+    try {
+        if (tf.ready) {
+            await tf.ready();
+        }
+    } catch (error) {
+        console.log('TensorFlow ready check failed in loadMoveNetModel:', error);
+        return null;
+    }
+    
     if (movenetModel) {
         return movenetModel;
     }
     
     try {
-        // Load MoveNet using TensorFlow Hub or CDN
-        // Try TensorFlow Hub first (more reliable)
+        // Load MoveNet using TensorFlow Hub (most reliable)
+        // The correct format for TF Hub models
         const modelUrl = 'https://tfhub.dev/google/tfjs-model/movenet/singlepose/lightning/4';
         movenetModel = await tf.loadGraphModel(modelUrl, { fromTFHub: true });
         return movenetModel;
     } catch (error) {
         console.log('MoveNet model loading from TFHub failed:', error);
-        // Try alternative: use pose-detection library from unpkg
+        // Try alternative: use the correct unpkg path
         try {
-            const alternativeUrl = 'https://cdn.jsdelivr.net/npm/@tensorflow-models/movenet@2.1.0/dist/movenet_singlepose_lightning_4/model.json';
+            // Use the correct path format for MoveNet from unpkg
+            const alternativeUrl = 'https://unpkg.com/@tensorflow-models/pose-detection@2.1.0/dist/movenet/singlepose/lightning/4/model.json';
             movenetModel = await tf.loadGraphModel(alternativeUrl);
             return movenetModel;
         } catch (altError) {
             console.log('Alternative MoveNet loading also failed:', altError);
-            // Final fallback: try loading from unpkg
+            // Final fallback: try using pose-detection library directly
             try {
-                const fallbackUrl = 'https://unpkg.com/@tensorflow-models/movenet@2.1.0/dist/movenet_singlepose_lightning_4/model.json';
-                movenetModel = await tf.loadGraphModel(fallbackUrl);
-                return movenetModel;
+                // Load pose-detection library and use it
+                if (typeof poseDetection === 'undefined') {
+                    await new Promise((resolve) => {
+                        const script = document.createElement('script');
+                        script.src = 'https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0/dist/pose-detection.min.js';
+                        script.onload = resolve;
+                        script.onerror = resolve;
+                        document.head.appendChild(script);
+                    });
+                }
+                
+                if (typeof poseDetection !== 'undefined' && poseDetection.createDetector) {
+                    const detector = await poseDetection.createDetector(
+                        poseDetection.SupportedModels.MoveNet,
+                        {
+                            modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+                        }
+                    );
+                    // Store the detector as the model
+                    movenetModel = detector;
+                    return movenetModel;
+                }
             } catch (finalError) {
                 console.log('All MoveNet loading attempts failed:', finalError);
                 return null;
             }
         }
     }
+    
+    return null;
 }
 
 async function detectBodyInImage(imageSrc) {
@@ -2587,6 +2665,14 @@ async function detectBodyInImage(imageSrc) {
     if (typeof tf === 'undefined') {
         await loadTensorFlow();
     } else {
+        // Wait for TensorFlow to be ready
+        try {
+            if (tf.ready) {
+                await tf.ready();
+            }
+        } catch (error) {
+            console.log('TensorFlow ready check failed in detectBodyInImage:', error);
+        }
         tfLoaded = true; // Mark as loaded if it's already available
     }
     
@@ -2615,6 +2701,24 @@ async function detectBodyInImage(imageSrc) {
             img.onerror = reject;
         });
         
+        // Check if model is a pose-detection detector (has estimatePoses method)
+        if (model && typeof model.estimatePoses === 'function') {
+            // Use pose-detection API
+            const poses = await model.estimatePoses(img);
+            if (poses && poses.length > 0) {
+                const keypoints = poses[0].keypoints;
+                // Process keypoints...
+                return {
+                    detected: true,
+                    state: 'body_detected',
+                    warning: null,
+                    message: 'Body detected successfully'
+                };
+            }
+            return { detected: false, state: null, warning: null, message: null };
+        }
+        
+        // Otherwise, use TensorFlow graph model
         // Resize image for MoveNet (model expects 192x192)
         const tensor = tf.browser.fromPixels(img);
         const resized = tf.image.resizeBilinear(tensor, [192, 192]);
@@ -2624,17 +2728,33 @@ async function detectBodyInImage(imageSrc) {
         // Cast to int32 as the model signature requires
         const int32Tensor = expanded.cast('int32');
         
+        // Clean up intermediate tensors (expanded is now part of int32Tensor)
+        tensor.dispose();
+        resized.dispose();
+        expanded.dispose();
+        
         // Run inference - MoveNet expects input shape [1, 192, 192, 3] with int32 dtype
         // Use execute() instead of executeAsync() as suggested by the warning
         const predictions = model.execute(int32Tensor);
+        
+        // Clean up input tensor after execution
+        int32Tensor.dispose();
         
         // MoveNet output shape can vary - get the data
         // Get the raw array data
         let keypointsArray;
         try {
             keypointsArray = await predictions.array();
+            // Dispose of predictions tensor after extracting data
+            if (predictions && predictions.dispose) {
+                predictions.dispose();
+            }
         } catch (e) {
             console.log('Error getting array from predictions:', e);
+            // Dispose of predictions tensor even on error
+            if (predictions && predictions.dispose) {
+                predictions.dispose();
+            }
             return { detected: false, warning: null };
         }
         
@@ -2696,12 +2816,7 @@ async function detectBodyInImage(imageSrc) {
             return { detected: false, warning: null };
         }
         
-        // Clean up tensors
-        tensor.dispose();
-        resized.dispose();
-        expanded.dispose();
-        int32Tensor.dispose();
-        predictions.dispose();
+        // Note: Tensors are already disposed above, predictions was disposed after array extraction
         
         // MoveNet returns 17 keypoints with [y, x, confidence] format
         // Important keypoints for body detection: shoulders, hips
