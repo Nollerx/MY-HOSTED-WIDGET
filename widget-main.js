@@ -2351,36 +2351,67 @@ async function loadFaceApi() {
         if (typeof faceapi === 'undefined') {
             // Try to load from CDN
             await new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js';
-                script.onload = () => {
-                    setTimeout(async () => {
-                        try {
-                            await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model');
-                            faceApiLoaded = true;
-                            faceApiLoading = false;
-                            resolve();
-                        } catch (e) {
-                            console.log('Face-API model loading failed:', e);
-                            faceApiLoading = false;
-                            resolve(); // Don't reject, just continue without face detection
-                        }
-                    }, 1000);
-                };
-                script.onerror = () => {
-                    console.log('Face-API.js failed to load');
+                try {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js';
+                    script.onload = () => {
+                        // Use setTimeout to ensure faceapi is fully initialized
+                        setTimeout(() => {
+                            // Check if faceapi is now available
+                            if (typeof faceapi === 'undefined') {
+                                console.log('Face-API.js loaded but faceapi object not available');
+                                faceApiLoading = false;
+                                faceApiLoaded = false;
+                                resolve();
+                                return;
+                            }
+                            
+                            // Load the model asynchronously
+                            faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model')
+                                .then(() => {
+                                    faceApiLoaded = true;
+                                    faceApiLoading = false;
+                                    resolve();
+                                })
+                                .catch((e) => {
+                                    console.log('Face-API model loading failed:', e);
+                                    faceApiLoading = false;
+                                    faceApiLoaded = false;
+                                    resolve(); // Don't reject, just continue without face detection
+                                });
+                        }, 1000);
+                    };
+                    script.onerror = () => {
+                        console.log('Face-API.js failed to load');
+                        faceApiLoading = false;
+                        faceApiLoaded = false;
+                        resolve(); // Don't reject, graceful fallback
+                    };
+                    document.head.appendChild(script);
+                } catch (err) {
+                    console.log('Error setting up Face-API script:', err);
                     faceApiLoading = false;
-                    resolve(); // Don't reject, graceful fallback
-                };
-                document.head.appendChild(script);
+                    faceApiLoaded = false;
+                    resolve();
+                }
             });
         } else {
-            faceApiLoaded = true;
+            // Face-API is already available, try to load the model
+            try {
+                if (faceapi && faceapi.nets && faceapi.nets.tinyFaceDetector) {
+                    await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model');
+                }
+                faceApiLoaded = true;
+            } catch (e) {
+                console.log('Face-API model already loaded but failed to verify:', e);
+                faceApiLoaded = true; // Assume it's loaded if faceapi exists
+            }
             faceApiLoading = false;
         }
     } catch (error) {
         console.log('Face-API initialization failed:', error);
         faceApiLoading = false;
+        faceApiLoaded = false;
     }
     
     return faceApiLoaded;
@@ -2395,6 +2426,12 @@ async function detectFaceInImage(imageSrc) {
         return { detected: false, warning: null }; // Silent fail - don't show warning if not available
     }
     
+    // Additional safety check for faceapi methods
+    if (!faceapi || !faceapi.detectAllFaces || !faceapi.TinyFaceDetectorOptions || !faceapi.fetchImage) {
+        console.log('Face-API methods not available');
+        return { detected: false, warning: null };
+    }
+    
     try {
         // Handle data URLs and regular URLs
         let img;
@@ -2403,11 +2440,45 @@ async function detectFaceInImage(imageSrc) {
             img = new Image();
             img.src = imageSrc;
             await new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = reject;
+                try {
+                    let resolved = false;
+                    const timeoutId = setTimeout(() => {
+                        if (!resolved && img.complete === false) {
+                            resolved = true;
+                            reject(new Error('Image load timeout'));
+                        }
+                    }, 10000);
+                    
+                    img.onload = () => {
+                        if (!resolved) {
+                            resolved = true;
+                            clearTimeout(timeoutId);
+                            resolve();
+                        }
+                    };
+                    img.onerror = () => {
+                        if (!resolved) {
+                            resolved = true;
+                            clearTimeout(timeoutId);
+                            console.log('Image load error in face detection');
+                            reject(new Error('Image failed to load'));
+                        }
+                    };
+                } catch (err) {
+                    reject(err);
+                }
             });
         } else {
-            img = await faceapi.fetchImage(imageSrc);
+            try {
+                img = await faceapi.fetchImage(imageSrc);
+            } catch (fetchError) {
+                console.log('Face-API fetchImage error:', fetchError);
+                return { detected: false, warning: null };
+            }
+        }
+        
+        if (!img) {
+            return { detected: false, warning: null };
         }
         
         const detections = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions());
