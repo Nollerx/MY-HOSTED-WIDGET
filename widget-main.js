@@ -1090,6 +1090,79 @@ let userPhotoFileId = null;
 const USER_PHOTO_STORAGE_KEY = 'vtow_user_photo';
 const USER_PHOTO_FILE_ID_STORAGE_KEY = 'vtow_user_photo_file_id';
 
+// Compress image to reduce storage size
+function compressImage(imageDataUrl, maxWidth = 800, quality = 0.7) {
+    return new Promise((resolve) => {
+        try {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                
+                // Calculate new dimensions
+                if (width > maxWidth) {
+                    height = (height * maxWidth) / width;
+                    width = maxWidth;
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // Convert to compressed JPEG
+                const compressed = canvas.toDataURL('image/jpeg', quality);
+                resolve(compressed);
+            };
+            img.onerror = () => {
+                // If compression fails, return original
+                resolve(imageDataUrl);
+            };
+            img.src = imageDataUrl;
+        } catch (error) {
+            console.log('Image compression error:', error);
+            resolve(imageDataUrl);
+        }
+    });
+}
+
+// Clean up old storage data to free space
+function cleanupStorage() {
+    try {
+        // Clear old wardrobe items (keep only last 10)
+        const wardrobe = getWardrobe();
+        if (wardrobe.length > 10) {
+            // Sort by timestamp and keep only most recent 10
+            wardrobe.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            const cleanedWardrobe = wardrobe.slice(0, 10);
+            saveWardrobe(cleanedWardrobe);
+            console.log('🧹 Cleaned up old wardrobe items');
+        }
+        
+        // Clear any other large localStorage items if needed
+        const keysToCheck = ['vtow_user_photo', 'virtual_tryon_wardrobe'];
+        for (const key of keysToCheck) {
+            try {
+                const item = localStorage.getItem(key) || sessionStorage.getItem(key);
+                if (item && item.length > 1000000) { // If item is > 1MB
+                    if (key === 'vtow_user_photo') {
+                        localStorage.removeItem(key);
+                    } else {
+                        sessionStorage.removeItem(key);
+                    }
+                    console.log('🧹 Removed large storage item:', key);
+                }
+            } catch (e) {
+                // Ignore errors during cleanup
+            }
+        }
+    } catch (error) {
+        console.log('Storage cleanup error:', error);
+    }
+}
+
 // Load saved photo from localStorage
 function loadSavedPhoto() {
     try {
@@ -1108,15 +1181,39 @@ function loadSavedPhoto() {
     return false;
 }
 
-// Save photo to localStorage
-function savePhotoToStorage(photoData, fileId) {
+// Save photo to localStorage with compression
+async function savePhotoToStorage(photoData, fileId) {
     try {
         if (photoData) {
-            localStorage.setItem(USER_PHOTO_STORAGE_KEY, photoData);
-            if (fileId) {
-                localStorage.setItem(USER_PHOTO_FILE_ID_STORAGE_KEY, fileId);
+            // Compress image before storing
+            const compressed = await compressImage(photoData, 800, 0.7);
+            
+            // Try to save, if quota exceeded, cleanup and retry
+            try {
+                localStorage.setItem(USER_PHOTO_STORAGE_KEY, compressed);
+                if (fileId) {
+                    localStorage.setItem(USER_PHOTO_FILE_ID_STORAGE_KEY, fileId);
+                }
+                console.log('✅ Saved photo to storage (compressed)');
+            } catch (error) {
+                if (error.name === 'QuotaExceededError') {
+                    console.warn('Storage quota exceeded, cleaning up...');
+                    cleanupStorage();
+                    // Try again with more compression
+                    const moreCompressed = await compressImage(photoData, 600, 0.6);
+                    try {
+                        localStorage.setItem(USER_PHOTO_STORAGE_KEY, moreCompressed);
+                        if (fileId) {
+                            localStorage.setItem(USER_PHOTO_FILE_ID_STORAGE_KEY, fileId);
+                        }
+                        console.log('✅ Saved photo after cleanup (more compressed)');
+                    } catch (retryError) {
+                        console.warn('Still exceeded quota after cleanup. Photo not saved.');
+                    }
+                } else {
+                    throw error;
+                }
             }
-            console.log('✅ Saved photo to storage');
         } else {
             // Clear storage if photo is null
             localStorage.removeItem(USER_PHOTO_STORAGE_KEY);
@@ -1124,7 +1221,6 @@ function savePhotoToStorage(photoData, fileId) {
         }
     } catch (error) {
         console.error('Error saving photo to storage:', error);
-        // Handle quota exceeded error gracefully
         if (error.name === 'QuotaExceededError') {
             console.warn('Storage quota exceeded. Photo not saved.');
         }
@@ -2228,8 +2324,8 @@ async function handlePhotoUpload(event) {
             userPhoto = imageDataUrl;
             userPhotoFileId = 'photo_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             
-            // Save photo to localStorage for persistence
-            savePhotoToStorage(imageDataUrl, userPhotoFileId);
+            // Save photo to localStorage for persistence (async with compression)
+            await savePhotoToStorage(imageDataUrl, userPhotoFileId);
             
             updatePhotoPreview(imageDataUrl);
             updateTryOnButton();
@@ -4417,12 +4513,58 @@ function getWardrobe() {
     }
 }
 
-// Save wardrobe to sessionStorage
+// Save wardrobe to sessionStorage with size management
 function saveWardrobe(wardrobe) {
     try {
-        sessionStorage.setItem(WARDROBE_STORAGE_KEY, JSON.stringify(wardrobe));
+        // Remove large base64 images from wardrobe items to save space
+        // Only keep URLs, not full base64 data
+        const cleanedWardrobe = wardrobe.map(item => {
+            const cleaned = { ...item };
+            // Remove full base64 images - only keep if it's a URL (not base64)
+            if (cleaned.originalPhotoUrl && cleaned.originalPhotoUrl.startsWith('data:')) {
+                delete cleaned.originalPhotoUrl; // Don't store full base64
+            }
+            if (cleaned.resultImageUrl && cleaned.resultImageUrl.startsWith('data:')) {
+                // Keep resultImageUrl but compress it or convert to blob URL if possible
+                // For now, we'll limit the wardrobe size instead
+            }
+            if (cleaned.clothingImageUrl && cleaned.clothingImageUrl.startsWith('data:')) {
+                delete cleaned.clothingImageUrl; // Don't store base64 clothing images
+            }
+            return cleaned;
+        });
+        
+        // Limit wardrobe to 15 items max
+        const limitedWardrobe = cleanedWardrobe.slice(-15);
+        
+        const wardrobeString = JSON.stringify(limitedWardrobe);
+        
+        // Check size before saving (sessionStorage limit is typically 5-10MB)
+        if (wardrobeString.length > 2000000) { // 2MB limit
+            console.warn('Wardrobe too large, removing oldest items...');
+            // Remove oldest items until under limit
+            let trimmed = [...limitedWardrobe];
+            while (JSON.stringify(trimmed).length > 2000000 && trimmed.length > 0) {
+                trimmed.shift(); // Remove oldest
+            }
+            sessionStorage.setItem(WARDROBE_STORAGE_KEY, JSON.stringify(trimmed));
+            console.log('✅ Saved wardrobe (trimmed to', trimmed.length, 'items)');
+        } else {
+            sessionStorage.setItem(WARDROBE_STORAGE_KEY, wardrobeString);
+        }
     } catch (error) {
         console.error('Error saving wardrobe to sessionStorage:', error);
+        if (error.name === 'QuotaExceededError') {
+            console.warn('Wardrobe quota exceeded, cleaning up...');
+            // Remove oldest items
+            const cleaned = wardrobe.slice(-10); // Keep only last 10
+            try {
+                sessionStorage.setItem(WARDROBE_STORAGE_KEY, JSON.stringify(cleaned));
+                console.log('✅ Saved wardrobe after cleanup (10 items)');
+            } catch (retryError) {
+                console.warn('Still exceeded quota. Wardrobe not saved.');
+            }
+        }
     }
 }
 
@@ -4440,9 +4582,10 @@ function addToWardrobe(clothing, resultImageUrl, tryOnId) {
         clothingPrice: clothing.price,
         clothingCategory: clothing.category,
         clothingColor: clothing.color,
-        clothingImageUrl: clothing.image_url,
-        resultImageUrl: resultImageUrl,
-        originalPhotoUrl: userPhoto, // Store the original user photo
+        clothingImageUrl: clothing.image_url, // This should be a URL, not base64
+        resultImageUrl: resultImageUrl, // Keep result but it might be base64
+        // Don't store full base64 originalPhotoUrl - it's already in localStorage
+        // originalPhotoUrl: userPhoto, // Removed to save space
         timestamp: new Date().toISOString(),
         sessionId: sessionId
     };
@@ -4479,9 +4622,10 @@ function addOriginalPhotoToWardrobe() {
             clothingPrice: 0,
             clothingCategory: 'photo',
             clothingColor: 'original',
-            clothingImageUrl: userPhoto,
-            resultImageUrl: userPhoto,
-            originalPhotoUrl: userPhoto,
+            // Don't store full base64 - reference that it's in localStorage instead
+            clothingImageUrl: 'stored_in_localStorage', // Reference only
+            resultImageUrl: 'stored_in_localStorage', // Reference only
+            // originalPhotoUrl removed to save space
             timestamp: new Date().toISOString(),
             sessionId: sessionId,
             isOriginalPhoto: true
@@ -4491,7 +4635,7 @@ function addOriginalPhotoToWardrobe() {
         saveWardrobe(wardrobe);
         updateWardrobeButton();
         
-        console.log('✅ Added original photo to wardrobe');
+        console.log('✅ Added original photo to wardrobe (reference only)');
     }
 }
 
@@ -4670,11 +4814,32 @@ function useOriginalPhoto(tryOnId) {
     }
     
     // Use the original photo for try-on
-    userPhoto = item.originalPhotoUrl;
-    userPhotoFileId = 'original_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    
-    // Update photo preview
-    updatePhotoPreview(item.originalPhotoUrl);
+    // Get photo from localStorage if it's an original photo item, otherwise use resultImageUrl
+    if (item.isOriginalPhoto) {
+        // For original photos, load from localStorage
+        const savedPhoto = localStorage.getItem(USER_PHOTO_STORAGE_KEY);
+        if (savedPhoto) {
+            userPhoto = savedPhoto;
+            userPhotoFileId = 'original_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            updatePhotoPreview(savedPhoto);
+        } else {
+            console.warn('Original photo not found in localStorage');
+            return;
+        }
+    } else if (item.resultImageUrl && !item.resultImageUrl.startsWith('stored_in_')) {
+        // Use result image if available (but not if it's just a reference)
+        userPhoto = item.resultImageUrl;
+        userPhotoFileId = 'wardrobe_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        updatePhotoPreview(item.resultImageUrl);
+    } else if (item.originalPhotoUrl && !item.originalPhotoUrl.startsWith('stored_in_')) {
+        // Fallback to originalPhotoUrl if it exists and is not a reference
+        userPhoto = item.originalPhotoUrl;
+        userPhotoFileId = 'original_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        updatePhotoPreview(item.originalPhotoUrl);
+    } else {
+        console.warn('No photo available for this wardrobe item');
+        return;
+    }
     
     // Close wardrobe modal
     closeWardrobe();
